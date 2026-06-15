@@ -1,0 +1,147 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LeadStatus {
+  NEW
+  HOT
+  REVIEW
+  QUALIFIED
+  LOW_QUALITY
+  REJECTED
+  CONVERTED
+}
+
+enum LeadFeedback {
+  NONE
+  LIKED
+  DISLIKED
+}
+
+enum SourceType {
+  DEMO
+  GOOGLE_PLACES
+  APIFY
+  WEBSITE
+  INSTAGRAM
+  MANUAL
+}
+
+enum SearchTaskStatus {
+  DRAFT
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model Lead {
+  id            String     @id @default(cuid())
+  googlePlaceId String?
+  companyName   String
+  displayName   String?
+  country       String
+  city          String?
+  address       String?
+  phone         String?
+  internationalPhoneNumber String?
+  whatsapp      String?
+  email         String?
+  website       String?
+  instagram     String?
+  googleMapsUrl String?
+  sourceType    SourceType @default(DEMO)
+  sourceQuery   String?
+  sourceKeyword String?
+  sourceCity    String?
+  sourceCountry String?
+  leadScore     Int        @default(0)
+  scoreReason   String?
+  categoryGuess String?
+  businessStatus String?
+  types         String[]   @default([])
+  openingHours  Json?
+  rating        Float?
+  userRatingsTotal Int?
+  status        LeadStatus @default(NEW)
+  userFeedback  LeadFeedback @default(NONE)
+  userFeedbackAt DateTime?
+  assignedTo    String?
+  notes         String?
+  aiAnalysis    Json?
+  aiAnalyzedAt  DateTime?
+  rawPayload    Json?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([country])
+  @@index([city])
+  @@index([status])
+  @@index([leadScore])
+  @@index([googlePlaceId])
+}
+
+model SearchTask {
+  id          String           @id @default(cuid())
+  name        String
+  country     String
+  city        String?
+  language    String?
+  keywordGroup String?
+  sourceKeyword String?
+  query       String
+  sourceType  SourceType       @default(DEMO)
+  maxResults  Int              @default(50)
+  status      SearchTaskStatus @default(DRAFT)
+  foundCount  Int              @default(0)
+  insertedCount Int             @default(0)
+  duplicateCount Int            @default(0)
+  errorCount Int                @default(0)
+  averageScore Float?
+  error       String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model SearchRunHistory {
+  id           String           @id @default(cuid())
+  taskId       String?
+  country      String
+  city         String?
+  keywordGroup String?
+  sourceKeyword String?
+  query        String
+  sourceType   SourceType
+  status       SearchTaskStatus
+  foundCount   Int              @default(0)
+  createdCount Int              @default(0)
+  duplicateCount Int            @default(0)
+  errorCount Int                @default(0)
+  averageScore Float?
+  error        String?
+  ranAt        DateTime         @default(now())
+
+  @@index([country, city, query, sourceType])
+  @@index([ranAt])
+}
+
+model CompanyProfile {
+  id                    String   @id @default("default")
+  companyName           String
+  description           String
+  productCategories     String[] @default([])
+  targetCustomerTypes   String[] @default([])
+  excludedCustomerTypes String[] @default([])
+  targetCountries       String[] @default([])
+  valueProposition      String
+  salesTone             String
+  minimumOrderNote      String?
+  outreachLanguage      String   @default("tr")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}

@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: melisa-lead-finder-postgres
+    environment:
+      POSTGRES_USER: melisa
+      POSTGRES_PASSWORD: melisa
+      POSTGRES_DB: melisa_lead_finder
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  redis:
+    image: redis:7-alpine
+    container_name: melisa-lead-finder-redis
+    ports:
+      - "6379:6379"
+volumes:
+  postgres_data:

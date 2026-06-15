@@ -1,0 +1,20 @@
+{
+  "name": "@melisa-lead-finder/api",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "build": "node -e \"console.log('API build: no compile step')\"",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@google/genai": "^2.8.0",
+    "@prisma/client": "^6.19.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "json2csv": "^6.0.0-alpha.2",
+    "zod": "^4.1.12"
+  }
+}
