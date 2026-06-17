@@ -447,12 +447,117 @@ function clampAnalysis(value) {
   return normalized;
 }
 
+function includesAny(text, terms) {
+  return terms.some((term) => text.includes(term));
+}
+
+function buildLocalLeadAnalysis(lead, reason) {
+  const haystack = [
+    lead.companyName,
+    lead.categoryGuess,
+    lead.sourceKeyword,
+    lead.sourceQuery,
+    lead.types,
+    lead.formattedAddress,
+  ].map((item) => String(item || '').toLowerCase()).join(' ');
+
+  const babySignal = includesAny(haystack, [
+    'baby',
+    'bebek',
+    'bebe',
+    'infant',
+    'newborn',
+    'бебе',
+    'бебеш',
+    'малыш',
+    'детск',
+    'детски',
+    'детские',
+    'copii',
+    'bambini',
+  ]);
+  const kidsSignal = includesAny(haystack, [
+    'kid',
+    'kids',
+    'child',
+    'children',
+    'cocuk',
+    'çocuk',
+    'çocuk giyim',
+    'дет',
+    'dzieci',
+    'copii',
+  ]);
+  const clothingSignal = includesAny(haystack, [
+    'clothing',
+    'clothes',
+    'wear',
+    'fashion',
+    'boutique',
+    'giyim',
+    'kiyafet',
+    'дрех',
+    'одеж',
+    'odziez',
+    'îmbrăcăminte',
+    'haine',
+  ]);
+  const wholesaleSignal = includesAny(haystack, ['wholesale', 'toptan', 'опт', 'оптом', 'hurt']);
+  const hasPhone = Boolean(lead.phone || lead.internationalPhoneNumber);
+  const hasWebsite = Boolean(lead.website);
+  const isTargetCustomer = (babySignal || kidsSignal) && clothingSignal;
+  const baseScore = Number.isFinite(lead.leadScore) ? lead.leadScore : 45;
+  const aiFitScore = Math.max(0, Math.min(100, Math.round(
+    baseScore
+      + (isTargetCustomer ? 8 : -12)
+      + (wholesaleSignal ? 8 : 0)
+      + (hasPhone ? 4 : 0)
+      + (hasWebsite ? 4 : 0),
+  )));
+  const recommendedAction = !isTargetCustomer
+    ? 'manual_review'
+    : hasPhone
+      ? 'whatsapp_first'
+      : hasWebsite
+        ? 'website_review'
+        : 'manual_review';
+  const aiCategory = wholesaleSignal
+    ? 'wholesale_candidate'
+    : babySignal && kidsSignal
+      ? 'mixed_retail'
+      : babySignal
+        ? 'baby_clothing_store'
+        : kidsSignal
+          ? 'kids_clothing_store'
+          : isTargetCustomer
+            ? 'mixed_retail'
+            : 'unknown';
+
+  return {
+    provider: 'LOCAL_AI',
+    model: 'local-lead-analysis-v1',
+    ...clampAnalysis({
+      aiFitScore,
+      aiCategory,
+      isTargetCustomer,
+      isWholesalePotential: wholesaleSignal || (isTargetCustomer && hasWebsite && hasPhone),
+      recommendedAction,
+      summary: isTargetCustomer
+        ? `${lead.companyName || 'Bu firma'} bebek/cocuk giyim hedef kitlesine uygun gorunuyor.`
+        : `${lead.companyName || 'Bu firma'} icin bebek/cocuk giyim sinyali zayif; manuel kontrol onerilir.`,
+      reason: `${reason || 'Gemini analizi alinamadi; yerel sinyal analizi kullanildi.'} Kaynak sinyaller: ${lead.sourceKeyword || lead.sourceQuery || 'belirsiz'}, skor ${baseScore}/100, telefon ${hasPhone ? 'var' : 'yok'}, web sitesi ${hasWebsite ? 'var' : 'yok'}.`,
+      suggestedMessage: isTargetCustomer
+        ? 'Merhaba, Melisa Baby olarak bebek ve cocuk giyim urunlerinde toptan is birligi yapiyoruz. Magazaniz icin koleksiyon ve fiyat bilgisi paylasabilir miyiz?'
+        : '',
+      confidence: isTargetCustomer ? 0.66 : 0.42,
+    }),
+  };
+}
+
 export async function analyzeLeadWithGemini(lead, companyProfile) {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
-    const error = new Error('Gemini API key is not configured');
-    error.status = 400;
-    throw error;
+    return buildLocalLeadAnalysis(lead, 'Gemini API key tanimli degil; yerel analiz kullanildi.');
   }
 
   let response;
@@ -468,17 +573,12 @@ export async function analyzeLeadWithGemini(lead, companyProfile) {
       },
     });
   } catch (err) {
-    const error = new Error(getFriendlyGeminiError(err));
-    error.status = err.status || 502;
-    error.cause = err;
-    throw error;
+    return buildLocalLeadAnalysis(lead, getFriendlyGeminiError(err));
   }
 
   const text = response.text;
   if (!text) {
-    const error = new Error('Gemini returned an empty analysis');
-    error.status = 502;
-    throw error;
+    return buildLocalLeadAnalysis(lead, 'Gemini bos analiz dondu; yerel analiz kullanildi.');
   }
 
   try {
@@ -488,10 +588,7 @@ export async function analyzeLeadWithGemini(lead, companyProfile) {
       ...clampAnalysis(parseGeminiJson(text)),
     };
   } catch (err) {
-    const error = new Error('Gemini returned invalid JSON');
-    error.status = 502;
-    error.cause = err;
-    throw error;
+    return buildLocalLeadAnalysis(lead, 'Gemini gecersiz analiz formati dondu; yerel analiz kullanildi.');
   }
 }
 

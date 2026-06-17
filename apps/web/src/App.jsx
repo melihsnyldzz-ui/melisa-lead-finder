@@ -535,7 +535,7 @@ export default function App() {
       const updated = await apiPost(`/leads/${selectedLead.id}/ai-analysis`, {});
       setSelectedLead(updated);
       setLeads((current) => current.map((lead) => (lead.id === updated.id ? updated : lead)));
-      setMessage('Gemini AI analizi tamamlandi');
+      setMessage(updated.aiAnalysis?.provider === 'GEMINI' ? 'Gemini AI analizi tamamlandi' : 'Yerel AI analizi kaydedildi');
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
