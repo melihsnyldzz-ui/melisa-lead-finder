@@ -3,7 +3,9 @@ import { z } from 'zod';
 import { prisma } from '../db.js';
 import { getCompanyProfile } from '../services/companyProfileService.js';
 import {
+  buildFallbackInstagramSearchPlan,
   buildFallbackSearchPlan,
+  createInstagramSearchPlanWithGemini,
   createSearchPlanWithGemini,
   getFriendlyGeminiError,
   testGeminiConnection,
@@ -248,6 +250,71 @@ router.post('/search-plan', async (req, res, next) => {
       res.json(plan);
     } catch (planError) {
       const fallbackPlan = buildFallbackSearchPlan({
+        countryPreset: input.countryPreset,
+        marketProfile: input.marketProfile,
+        coverage: compactCoverage,
+      });
+      res.json({
+        ...fallbackPlan,
+        aiError: getFriendlyGeminiError(planError),
+      });
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/instagram-search-plan', async (req, res, next) => {
+  try {
+    const input = searchPlanSchema.parse(req.body);
+    const companyProfile = await getCompanyProfile(prisma);
+    const coverage = await prisma.searchRunHistory.findMany({
+      where: {
+        country: { equals: input.countryPreset.name, mode: 'insensitive' },
+        sourceType: 'INSTAGRAM',
+      },
+      orderBy: { ranAt: 'desc' },
+      take: 100,
+    });
+    const coverageByCity = coverage.reduce((acc, run) => {
+      const city = run.city || 'No city';
+      if (!acc.has(city)) {
+        acc.set(city, {
+          city: run.city,
+          totalRuns: 0,
+          completedRuns: 0,
+          foundCount: 0,
+          createdCount: 0,
+          duplicateCount: 0,
+          lastRunAt: run.ranAt,
+        });
+      }
+      const item = acc.get(city);
+      item.totalRuns += 1;
+      if (run.status === 'COMPLETED') item.completedRuns += 1;
+      item.foundCount += run.foundCount;
+      item.createdCount += run.createdCount;
+      item.duplicateCount += run.duplicateCount;
+      return acc;
+    }, new Map());
+    const compactCoverage = {
+      country: input.countryPreset.name,
+      totalRuns: coverage.length,
+      cities: [...coverageByCity.values()],
+      performance: summarizeRunPerformance(coverage),
+      userFeedback: await summarizeLeadFeedback(input.countryPreset.name),
+    };
+
+    try {
+      const plan = await createInstagramSearchPlanWithGemini({
+        countryPreset: input.countryPreset,
+        marketProfile: input.marketProfile,
+        coverage: compactCoverage,
+        companyProfile,
+      });
+      res.json(plan);
+    } catch (planError) {
+      const fallbackPlan = buildFallbackInstagramSearchPlan({
         countryPreset: input.countryPreset,
         marketProfile: input.marketProfile,
         coverage: compactCoverage,

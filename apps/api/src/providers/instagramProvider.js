@@ -41,10 +41,12 @@ function buildApifyInput(task) {
   }
 
   const actorId = getApifyConfig().actorId;
+  const taggedSearchType = String(task.sourceKeyword || '').match(/^(user|hashtag|place):/i)?.[1]?.toLowerCase();
+  const inferredSearchType = taggedSearchType || (String(task.query || '').trim().startsWith('#') ? 'hashtag' : 'user');
   if (actorId.includes('instagram-search-scraper')) {
     return {
       search: task.query,
-      searchType: 'user',
+      searchType: inferredSearchType,
       searchLimit: Number(task.maxResults) || 20,
       enhanceUserSearchWithFacebookPage: false,
     };
@@ -53,7 +55,7 @@ function buildApifyInput(task) {
   return {
     search: task.query,
     query: task.query,
-    searchType: 'user',
+    searchType: inferredSearchType,
     resultsLimit: Number(task.maxResults) || 20,
     maxItems: Number(task.maxResults) || 20,
   };

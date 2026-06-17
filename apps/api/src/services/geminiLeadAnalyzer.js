@@ -132,6 +132,74 @@ const searchPlanSchema = {
   additionalProperties: false,
 };
 
+const instagramSearchPlanSchema = {
+  type: 'object',
+  properties: {
+    summary: { type: 'string' },
+    audienceDefinition: { type: 'string' },
+    targetProfiles: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    searchQueries: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          query: { type: 'string' },
+          searchType: {
+            type: 'string',
+            enum: ['user', 'hashtag', 'place'],
+          },
+          priority: {
+            type: 'string',
+            enum: ['high', 'medium', 'low'],
+          },
+          reason: { type: 'string' },
+        },
+        required: ['query', 'searchType', 'priority', 'reason'],
+        additionalProperties: false,
+      },
+    },
+    positiveSignals: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    negativeSignals: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    hashtags: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    localKeywords: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    cityFocus: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    maxResultsPerQuery: { type: 'integer', minimum: 1, maximum: 20 },
+    confidence: { type: 'number', minimum: 0, maximum: 1 },
+  },
+  required: [
+    'summary',
+    'audienceDefinition',
+    'targetProfiles',
+    'searchQueries',
+    'positiveSignals',
+    'negativeSignals',
+    'hashtags',
+    'localKeywords',
+    'cityFocus',
+    'maxResultsPerQuery',
+    'confidence',
+  ],
+  additionalProperties: false,
+};
+
 function getGeminiApiKey() {
   return process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '';
 }
@@ -425,6 +493,53 @@ Rules:
 `;
 }
 
+function buildInstagramSearchPlanPrompt({ countryPreset, marketProfile, coverage, companyProfile }) {
+  return `
+You are an AI Instagram lead search strategist for a wholesale baby and kids clothing supplier.
+
+Company profile:
+${JSON.stringify(compactCompanyProfileForPrompt(companyProfile), null, 2)}
+
+Country preset:
+${JSON.stringify(countryPreset, null, 2)}
+
+Market profile:
+${JSON.stringify(marketProfile || null, null, 2)}
+
+Existing Instagram search coverage and feedback:
+${JSON.stringify(coverage || null, null, 2)}
+
+Goal:
+Create a detailed Instagram discovery plan that finds virtual stores, baby clothing shops, kids clothing boutiques, children's wear sellers, and wholesale-capable retail profiles.
+
+Rules:
+- Return Turkish explanations, but search queries can be English, Turkish, and local language.
+- Focus on Instagram profiles that look like real businesses, not personal influencer accounts.
+- Include local language keywords, transliterated variants, English variants, and boutique/online shop terms.
+- Prefer searchType "user" because the current actor inserts profile leads; use hashtag/place only as secondary discovery ideas.
+- Do not target toy-only pages, schools, clinics, playgrounds, mother blogs, personal baby accounts, adult fashion only, or unrelated marketplaces.
+- Use previous liked/disliked lead feedback as the strongest learning signal.
+- If previous Instagram searches are weak, make queries more specific and local.
+- Return only one valid JSON object. Do not write markdown, code fences, explanations, or any text before/after JSON.
+- Use exactly this shape:
+{
+  "summary": "short Turkish strategy summary",
+  "audienceDefinition": "which Instagram pages and businesses should be found",
+  "targetProfiles": ["baby clothing Instagram stores", "kids boutique pages"],
+  "searchQueries": [
+    { "query": "baby clothing boutique Varna", "searchType": "user", "priority": "high", "reason": "why this query should work" }
+  ],
+  "positiveSignals": ["bio contains kidswear", "WhatsApp in bio", "store address"],
+  "negativeSignals": ["personal influencer", "toy-only", "adult fashion"],
+  "hashtags": ["#kidswearvarna"],
+  "localKeywords": ["local baby clothing keyword"],
+  "cityFocus": ["Varna", "Sofia"],
+  "maxResultsPerQuery": 5,
+  "confidence": 0.75
+}
+`;
+}
+
 function clampAnalysis(value) {
   const normalized = {
     aiFitScore: Number.isFinite(value.aiFitScore) ? Math.max(0, Math.min(100, Math.round(value.aiFitScore))) : 0,
@@ -703,6 +818,79 @@ function clampSearchPlan(value, countryPreset = {}) {
   };
 }
 
+function normalizeInstagramSearchType(value) {
+  return ['user', 'hashtag', 'place'].includes(value) ? value : 'user';
+}
+
+function clampInstagramSearchPlan(value, countryPreset = {}) {
+  const cities = Array.isArray(countryPreset.cities) ? countryPreset.cities : [];
+  const fallbackCity = cities[0] || '';
+  const fallbackQueries = [
+    `baby clothing boutique ${fallbackCity}`.trim(),
+    `kidswear boutique ${fallbackCity}`.trim(),
+    `children clothing store ${fallbackCity}`.trim(),
+    `babywear shop ${fallbackCity}`.trim(),
+  ];
+  const rawQueries = Array.isArray(value.searchQueries) ? value.searchQueries : [];
+  const searchQueries = rawQueries
+    .map((item) => ({
+      query: String(item?.query || item?.keyword || item?.search || '').trim(),
+      searchType: normalizeInstagramSearchType(item?.searchType),
+      priority: ['high', 'medium', 'low'].includes(item?.priority) ? item.priority : 'medium',
+      reason: String(item?.reason || item?.why || '').slice(0, 240),
+    }))
+    .filter((item) => item.query)
+    .slice(0, 10);
+
+  const normalizedQueries = searchQueries.length
+    ? searchQueries
+    : fallbackQueries.map((query, index) => ({
+      query,
+      searchType: 'user',
+      priority: index === 0 ? 'high' : 'medium',
+      reason: index === 0 ? 'Ilk Instagram profil kesfi icin en guclu genel sorgu.' : 'Kapsami genisletmek icin alternatif profil sorgusu.',
+    }));
+
+  return {
+    provider: 'GEMINI',
+    model: DEFAULT_MODEL,
+    summary: String(value.summary || `${countryPreset.name || 'Secili ulke'} icin Instagram bebek/cocuk giyim profil arama plani.`).slice(0, 700),
+    audienceDefinition: String(value.audienceDefinition || 'Instagram uzerinden satis yapan bebek giyim, cocuk giyim, kidswear butik ve sanal magaza profilleri.').slice(0, 700),
+    targetProfiles: normalizeStringArray(value.targetProfiles, [
+      'baby clothing Instagram stores',
+      'kids clothing boutiques',
+      'children wear online shops',
+      'babywear retailers with WhatsApp in bio',
+    ], 8),
+    searchQueries: normalizedQueries,
+    positiveSignals: normalizeStringArray(value.positiveSignals, [
+      'bio contains babywear, kidswear, children clothing, boutique, shop',
+      'WhatsApp, phone, website, or store address exists',
+      'recent product posts and catalog-like content',
+      'business account or store-like profile name',
+    ], 10),
+    negativeSignals: normalizeStringArray(value.negativeSignals, [
+      'personal influencer account',
+      'toy-only page',
+      'school, clinic, playground, mother blog',
+      'adult fashion only',
+      'private or empty profile',
+    ], 10),
+    hashtags: normalizeStringArray(value.hashtags, [
+      '#kidswear',
+      '#babywear',
+      '#childrensclothing',
+      '#kidsboutique',
+    ], 12),
+    localKeywords: normalizeStringArray(value.localKeywords || value.localLanguageKeywords, countryPreset.queries || [], 10),
+    cityFocus: normalizeStringArray(value.cityFocus || value.cities, cities.slice(0, 5), 6),
+    maxResultsPerQuery: Number.isFinite(value.maxResultsPerQuery)
+      ? Math.max(1, Math.min(20, Math.round(value.maxResultsPerQuery)))
+      : 5,
+    confidence: Number.isFinite(value.confidence) ? Math.max(0, Math.min(1, value.confidence)) : 0.62,
+  };
+}
+
 export function buildFallbackSearchPlan({ countryPreset = {}, marketProfile = {}, coverage = null } = {}) {
   const cities = Array.isArray(countryPreset.cities) ? countryPreset.cities : [];
   const searchedCities = new Set((coverage?.cities || [])
@@ -769,6 +957,111 @@ export function buildFallbackSearchPlan({ countryPreset = {}, marketProfile = {}
     maxResults: 50,
     confidence: marketProfile ? 0.72 : 0.55,
   };
+}
+
+export function buildFallbackInstagramSearchPlan({ countryPreset = {}, marketProfile = {}, coverage = null } = {}) {
+  const cities = Array.isArray(countryPreset.cities) ? countryPreset.cities : [];
+  const searchedCities = new Set((coverage?.cities || [])
+    .filter((city) => city.completedRuns > 0)
+    .map((city) => city.city));
+  const cityFocus = [
+    ...cities.filter((city) => !searchedCities.has(city)),
+    ...cities.filter((city) => searchedCities.has(city)),
+  ].slice(0, 4);
+  const primaryCity = cityFocus[0] || cities[0] || '';
+  const localKeywords = normalizeStringArray(countryPreset.queries || [], [], 8);
+  const keywords = [
+    'baby clothing boutique',
+    'kidswear boutique',
+    'children clothing shop',
+    'babywear shop',
+    'kids fashion store',
+    ...localKeywords,
+  ];
+
+  return clampInstagramSearchPlan({
+    summary: marketProfile?.salesNotes?.length
+      ? `${countryPreset.name} icin Instagram aramalarinda sanal magaza, WhatsApp satis ve butik profil sinyalleri one alinacak. ${marketProfile.salesNotes[0]}`
+      : `${countryPreset.name || 'Secili ulke'} icin Instagram sanal magaza ve bebek/cocuk giyim butik profilleri aranacak.`,
+    audienceDefinition: 'Instagram uzerinden satis yapan bebek giyim magazalari, cocuk giyim butik sayfalari, kidswear sanal magazalari ve WhatsApp ile siparis alan isletme profilleri.',
+    targetProfiles: [
+      'baby clothing Instagram stores',
+      'kids clothing boutiques',
+      'children wear online shops',
+      'babywear retailers',
+      'kids fashion sellers with WhatsApp',
+    ],
+    searchQueries: keywords.slice(0, 8).map((keyword, index) => ({
+      query: [keyword, primaryCity].filter(Boolean).join(' '),
+      searchType: 'user',
+      priority: index < 3 ? 'high' : 'medium',
+      reason: index < 3 ? 'Hedef profil sinyali guclu ana Instagram sorgusu.' : 'Yerel varyasyonla kapsam genisletme sorgusu.',
+    })),
+    positiveSignals: [
+      'bio veya ad kisminda baby, kids, children, boutique, shop, wear sinyali',
+      'WhatsApp, telefon, web sitesi veya adres bulunmasi',
+      'urun katalogu gibi gorunen son paylasimlar',
+      'magaza/butik ismi ve fiyat/siparis dili',
+    ],
+    negativeSignals: [
+      'personal influencer account',
+      'toy-only page',
+      'mother blog',
+      'adult fashion only',
+      'school, clinic, playground',
+      'private or empty profile',
+    ],
+    hashtags: ['#kidswear', '#babywear', '#kidsboutique', '#childrensclothing'],
+    localKeywords,
+    cityFocus,
+    maxResultsPerQuery: 5,
+    confidence: coverage?.totalRuns ? 0.7 : 0.58,
+  }, countryPreset);
+}
+
+export async function createInstagramSearchPlanWithGemini({ countryPreset, marketProfile, coverage, companyProfile }) {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    const error = new Error('Gemini API key is not configured');
+    error.status = 400;
+    throw error;
+  }
+
+  let response;
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    response = await generateContentWithRetry(ai, {
+      model: DEFAULT_MODEL,
+      contents: buildInstagramSearchPlanPrompt({ countryPreset, marketProfile, coverage, companyProfile }),
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0.28,
+        maxOutputTokens: 3200,
+      },
+    });
+  } catch (err) {
+    const error = new Error(getFriendlyGeminiError(err));
+    error.status = err.status || 502;
+    error.cause = err;
+    throw error;
+  }
+
+  const text = response.text;
+  if (!text) {
+    const error = new Error('Gemini returned an empty Instagram search plan');
+    error.status = 502;
+    throw error;
+  }
+
+  try {
+    return clampInstagramSearchPlan(parseGeminiJson(text), countryPreset);
+  } catch (err) {
+    const preview = String(text || '').replace(/\s+/g, ' ').slice(0, 180);
+    const error = new Error(`Gemini returned invalid Instagram search plan JSON: ${err.message}${preview ? ` (${preview})` : ''}`);
+    error.status = 502;
+    error.cause = err;
+    throw error;
+  }
 }
 
 export async function createSearchPlanWithGemini({ countryPreset, marketProfile, coverage, companyProfile }) {

@@ -198,6 +198,8 @@ export default function App() {
   const [instagramForm, setInstagramForm] = useState(instagramDefaults);
   const [instagramLeads, setInstagramLeads] = useState([]);
   const [instagramSummary, setInstagramSummary] = useState(null);
+  const [instagramAiPlan, setInstagramAiPlan] = useState(null);
+  const [isPlanningInstagramSearch, setIsPlanningInstagramSearch] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [isRunningInstagramSearch, setIsRunningInstagramSearch] = useState(false);
@@ -230,9 +232,13 @@ export default function App() {
     [selectedPresetCode],
   );
   const selectedMarketProfile = selectedPreset ? countryMarketProfiles[selectedPreset.code] : null;
+  const selectedInstagramPreset = useMemo(
+    () => balkanCountryPresets.find((preset) => preset.name === instagramForm.country) || selectedPreset,
+    [instagramForm.country, selectedPreset],
+  );
   const automaticSearchPlan = useMemo(
     () => buildAutomaticSearchPlan(taskForm, selectedPreset, aiSearchPlan),
-    [taskForm.country, taskForm.city, taskForm.keywordGroup, selectedPreset, aiSearchPlan],
+    [taskForm.country, taskForm.city, taskForm.keywordGroup, taskForm.sourceType, selectedPreset, aiSearchPlan],
   );
   const selectedFilterPreset = useMemo(
     () => balkanCountryPresets.find((preset) => preset.name === filters.country),
@@ -407,6 +413,63 @@ export default function App() {
     setInstagramForm(next);
   }
 
+  async function loadInstagramAiPlan() {
+    const preset = selectedInstagramPreset || balkanCountryPresets.find((item) => item.name === instagramForm.country);
+    if (!preset) {
+      setError('Instagram AI plani icin once desteklenen bir ulke secilmeli');
+      return null;
+    }
+    setError(null);
+    setMessage(null);
+    setInstagramAiPlan(null);
+    setIsPlanningInstagramSearch(true);
+    try {
+      const plan = await apiPost('/ai/instagram-search-plan', {
+        countryPreset: {
+          code: preset.code,
+          name: preset.name,
+          cities: preset.cities,
+          queries: preset.queries,
+        },
+        marketProfile: countryMarketProfiles[preset.code] || null,
+      });
+      setInstagramAiPlan(plan);
+      const firstQuery = plan.searchQueries?.find((item) => item.searchType === 'user') || plan.searchQueries?.[0];
+      const firstCity = plan.cityFocus?.[0] || instagramForm.city || preset.cities[0];
+      if (firstQuery) {
+        setInstagramForm((current) => ({
+          ...current,
+          country: preset.name,
+          city: firstCity,
+          sourceKeyword: `${firstQuery.searchType}: ${firstQuery.query}`,
+          query: firstQuery.query,
+          maxResults: plan.maxResultsPerQuery || current.maxResults,
+        }));
+      }
+      setMessage(plan.provider === 'GEMINI' ? 'Gemini Instagram arama kriterleri hazir' : 'Yerel Instagram arama kriterleri hazir');
+      return plan;
+    } catch (err) {
+      setError(getErrorMessage(err));
+      return null;
+    } finally {
+      setIsPlanningInstagramSearch(false);
+    }
+  }
+
+  function getInstagramPlanQueries() {
+    const plannedQueries = instagramAiPlan?.searchQueries?.length
+      ? instagramAiPlan.searchQueries
+      : [{
+        query: instagramForm.query,
+        searchType: 'user',
+        priority: 'high',
+        reason: 'Formdaki manuel Instagram sorgusu.',
+      }];
+    return plannedQueries
+      .filter((item) => item.query && (item.searchType || 'user') === 'user')
+      .slice(0, 6);
+  }
+
   async function runInstagramPanelSearch(event) {
     event.preventDefault();
     setError(null);
@@ -414,22 +477,34 @@ export default function App() {
     setInstagramSummary(null);
     setIsRunningInstagramSearch(true);
     try {
-      const created = await apiPost('/search-tasks', {
-        name: `${instagramForm.country} ${instagramForm.city} Instagram Bebek/Cocuk Giyim Arama`,
-        country: instagramForm.country,
-        city: instagramForm.city,
-        language: 'auto',
-        keywordGroup: 'baby/kids retail',
-        sourceKeyword: instagramForm.sourceKeyword,
-        query: instagramForm.query,
-        sourceType: 'INSTAGRAM',
-        maxResults: Number(instagramForm.maxResults),
-        allowDuplicate: true,
-      });
-      const summary = await apiPost(`/search-tasks/${created.id}/run`, {});
-      setInstagramSummary(summary);
+      const queries = getInstagramPlanQueries();
+      const summaries = [];
+      for (const item of queries) {
+        const created = await apiPost('/search-tasks', {
+          name: `${instagramForm.country} ${instagramForm.city} Instagram ${item.query}`,
+          country: instagramForm.country,
+          city: instagramForm.city,
+          language: 'auto',
+          keywordGroup: 'instagram baby/kids retail',
+          sourceKeyword: `${item.searchType || 'user'}: ${item.query}`,
+          query: item.query,
+          sourceType: 'INSTAGRAM',
+          maxResults: Number(instagramAiPlan?.maxResultsPerQuery || instagramForm.maxResults),
+          allowDuplicate: true,
+        });
+        summaries.push(await apiPost(`/search-tasks/${created.id}/run`, {}));
+      }
+      const summary = summaries.reduce((acc, item) => ({
+        foundCount: acc.foundCount + (item.foundCount || 0),
+        createdCount: acc.createdCount + (item.createdCount || 0),
+        duplicateCount: acc.duplicateCount + (item.duplicateCount || 0),
+        errorCount: acc.errorCount + (item.errorCount || 0),
+        searchedResults: [...(acc.searchedResults || []), ...(item.searchedResults || [])].slice(0, 80),
+        bestLeads: [...(acc.bestLeads || []), ...(item.bestLeads || [])].sort((a, b) => b.leadScore - a.leadScore).slice(0, 8),
+      }), { foundCount: 0, createdCount: 0, duplicateCount: 0, errorCount: 0, searchedResults: [], bestLeads: [] });
+      setInstagramSummary({ ...summary, ranQueries: queries });
       await Promise.all([refresh(), refreshInstagramLeads()]);
-      setMessage(`${summary.foundCount || 0} Instagram profili bulundu, ${summary.createdCount || 0} yeni lead eklendi`);
+      setMessage(`${queries.length} Instagram sorgusu calisti, ${summary.foundCount || 0} profil bulundu, ${summary.createdCount || 0} yeni lead eklendi`);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -1360,7 +1435,7 @@ export default function App() {
               <form className="panel instagram-search-panel" onSubmit={runInstagramPanelSearch}>
                 <div className="panel-header">
                   <h2>Profil Arama</h2>
-                  <span>Bebek/cocuk giyim odakli</span>
+                  <span>{instagramAiPlan?.provider === 'GEMINI' ? 'Gemini kriterleri aktif' : 'Bebek/cocuk giyim odakli'}</span>
                 </div>
                 <label>
                   Ulke
@@ -1389,7 +1464,49 @@ export default function App() {
                   Maksimum profil
                   <input required min="1" max="50" type="number" value={instagramForm.maxResults} onChange={(e) => setInstagramForm({ ...instagramForm, maxResults: e.target.value })} />
                 </label>
+                {instagramAiPlan && (
+                  <div className={`instagram-ai-plan ${instagramAiPlan.provider === 'GEMINI' ? 'gemini-source' : ''}`}>
+                    <div className="instagram-ai-plan-header">
+                      <strong>{instagramAiPlan.provider === 'GEMINI' ? 'Gemini Instagram Plani' : 'Yerel Instagram Plani'}</strong>
+                      <span>Guven %{Math.round((instagramAiPlan.confidence || 0) * 100)}</span>
+                    </div>
+                    <p>{instagramAiPlan.summary}</p>
+                    <small>{instagramAiPlan.audienceDefinition}</small>
+                    <div className="instagram-query-list">
+                      {instagramAiPlan.searchQueries?.slice(0, 6).map((item) => (
+                        <button
+                          className={instagramForm.query === item.query ? 'selected' : ''}
+                          key={`${item.searchType}-${item.query}`}
+                          onClick={() => setInstagramForm((current) => ({
+                            ...current,
+                            sourceKeyword: `${item.searchType}: ${item.query}`,
+                            query: item.query,
+                            maxResults: instagramAiPlan.maxResultsPerQuery || current.maxResults,
+                          }))}
+                          type="button"
+                        >
+                          <strong>{item.query}</strong>
+                          <small>{item.searchType} - {item.priority} - {item.reason}</small>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="instagram-signal-grid">
+                      <div>
+                        <strong>Olumlu sinyal</strong>
+                        {instagramAiPlan.positiveSignals?.slice(0, 4).map((item) => <span key={item}>{item}</span>)}
+                      </div>
+                      <div>
+                        <strong>Ele</strong>
+                        {instagramAiPlan.negativeSignals?.slice(0, 4).map((item) => <span key={item}>{item}</span>)}
+                      </div>
+                    </div>
+                    {instagramAiPlan.aiError && <div className="field-note warning">{instagramAiPlan.aiError}</div>}
+                  </div>
+                )}
                 <div className="instagram-search-actions">
+                  <button className="secondary-button" disabled={isPlanningInstagramSearch || isRunningInstagramSearch} onClick={loadInstagramAiPlan} type="button">
+                    <Bot size={16} /> {isPlanningInstagramSearch ? 'Gemini planliyor' : 'Gemini Kriter Olustur'}
+                  </button>
                   <button disabled={isRunningInstagramSearch} type="submit">
                     <InstagramIcon size={16} /> {isRunningInstagramSearch ? 'Araniyor' : 'Instagram Profilleri Ara'}
                   </button>
@@ -1414,6 +1531,7 @@ export default function App() {
                     <span>Bulunan {instagramSummary.foundCount || 0}</span>
                     <span>Eklenen {instagramSummary.createdCount || 0}</span>
                     <span>Tekrar {instagramSummary.duplicateCount || 0}</span>
+                    {instagramSummary.ranQueries?.length ? <span>Sorgu {instagramSummary.ranQueries.length}</span> : null}
                   </div>
                 ) : (
                   <p>Arama calistirinca bulunan profiller, eklenen leadler ve tekrarlar burada gorunur.</p>
