@@ -40,6 +40,16 @@ function buildApifyInput(task) {
     }
   }
 
+  const actorId = getApifyConfig().actorId;
+  if (actorId.includes('instagram-search-scraper')) {
+    return {
+      search: task.query,
+      searchType: 'user',
+      searchLimit: Number(task.maxResults) || 20,
+      enhanceUserSearchWithFacebookPage: false,
+    };
+  }
+
   return {
     search: task.query,
     query: task.query,
@@ -64,8 +74,10 @@ function normalizeInstagramUrl(value, handle) {
 
 function buildLeadFromApifyItem(task, item, index) {
   const handle = pickFirst(item, ['username', 'userName', 'handle', 'account', 'profileName', 'ownerUsername']);
+  const rawUrl = pickFirst(item, ['url', 'profileUrl', 'instagramUrl', 'inputUrl']);
+  if (item?.error && !handle && !rawUrl) return null;
   const displayName = pickFirst(item, ['fullName', 'name', 'displayName', 'title']) || handle || `Instagram profile ${index + 1}`;
-  const instagram = normalizeInstagramUrl(pickFirst(item, ['url', 'profileUrl', 'instagramUrl', 'inputUrl']), handle);
+  const instagram = normalizeInstagramUrl(rawUrl, handle);
   const followers = Number(pickFirst(item, ['followersCount', 'followers', 'followerCount'])) || 0;
   const bio = pickFirst(item, ['biography', 'bio', 'description']) || '';
   const website = pickFirst(item, ['externalUrl', 'website', 'websiteUrl']);
@@ -90,7 +102,9 @@ function buildLeadFromApifyItem(task, item, index) {
     sourceCountry: task.country,
     categoryGuess: [item.category, item.businessCategoryName, bio, task.sourceKeyword].filter(Boolean).join(' ').slice(0, 250),
     types: ['instagram_profile', 'online_store'],
-    notes: 'Apify Instagram actor tarafindan bulundu.',
+    notes: item?.error
+      ? `Apify Instagram actor tarafindan kismi profil sonucu bulundu: ${item.errorDescription || item.error}`
+      : 'Apify Instagram actor tarafindan bulundu.',
     rawPayload: {
       provider: 'apify_instagram',
       handle,
@@ -127,7 +141,10 @@ async function runApifyInstagramSearch(task) {
   }
 
   const items = await response.json();
-  return (Array.isArray(items) ? items : []).slice(0, Number(task.maxResults) || 20).map((item, index) => buildLeadFromApifyItem(task, item, index));
+  return (Array.isArray(items) ? items : [])
+    .map((item, index) => buildLeadFromApifyItem(task, item, index))
+    .filter(Boolean)
+    .slice(0, Number(task.maxResults) || 20);
 }
 
 function buildInstagramLead({ country, city, query, sourceKeyword }, profile, index) {
