@@ -251,6 +251,18 @@ export function scoreLead(lead) {
     score += 15;
     reasons.push('website exists');
   }
+  if (lead.instagram) {
+    score += 15;
+    reasons.push('instagram profile exists');
+  }
+  if (lead.sourceType === 'INSTAGRAM' && isTarget) {
+    score += 10;
+    reasons.push('instagram-only baby/kids clothing sales channel');
+  }
+  if ((lead.rawPayload?.followers || 0) >= 5000) {
+    score += 10;
+    reasons.push('instagram audience signal');
+  }
   if ((lead.rating || lead.rawPayload?.rating || 0) >= 4) {
     score += 10;
     reasons.push('rating >= 4.0');
@@ -292,9 +304,9 @@ export function scoreLead(lead) {
     score -= 45;
     reasons.push('outside baby/kids clothing target');
   }
-  if (!lead.phone && !lead.internationalPhoneNumber && !lead.website) {
+  if (!lead.phone && !lead.internationalPhoneNumber && !lead.website && !lead.instagram) {
     score -= 10;
-    reasons.push('no phone and no website');
+    reasons.push('no phone, website, or instagram');
   }
   if (lead.rating && lead.rating < 3.5) {
     score -= 10;

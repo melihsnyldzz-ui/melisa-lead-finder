@@ -25,6 +25,7 @@ const feedbackLabels = {
 const sourceTypeLabels = {
   DEMO: 'Demo',
   GOOGLE_PLACES: 'Google Places',
+  INSTAGRAM: 'Instagram',
 };
 
 const taskStatusLabels = {
@@ -55,6 +56,17 @@ const automaticSearchKeywords = [
   "children's wear store",
   'kids fashion store',
   'baby kids clothing store',
+];
+
+const instagramSearchKeywords = [
+  'baby clothing boutique',
+  'kids clothing boutique',
+  'children wear shop',
+  'babywear',
+  'kidswear',
+  'bebek giyim',
+  'cocuk giyim',
+  'çocuk giyim',
 ];
 
 const googlePlacesLanguageCodes = new Set(['en', 'ro', 'bg', 'de', 'tr', 'ru', 'uk', 'pl', 'el', 'sr', 'hr', 'sq']);
@@ -130,17 +142,20 @@ function uniqueList(items) {
 
 function buildAutomaticSearchPlan(taskForm, selectedPreset, aiSearchPlan) {
   const city = taskForm.city || aiSearchPlan?.primaryCity || selectedPreset?.cities?.[0] || '';
+  const isInstagram = taskForm.sourceType === 'INSTAGRAM';
   const keywords = uniqueList([
     ...(aiSearchPlan?.keywords || []),
     ...(aiSearchPlan?.localKeywords || []),
-    ...automaticSearchKeywords,
+    ...(isInstagram ? instagramSearchKeywords : automaticSearchKeywords),
     ...(selectedPreset?.queries || []),
   ]);
-  const queries = keywords.flatMap((keyword) => (
-    city ? [`${keyword} ${city}`, `${keyword} near ${city} center`] : [keyword]
-  ));
+  const queries = isInstagram
+    ? keywords.flatMap((keyword) => (city ? [`${keyword} ${city}`, `${keyword} ${city} instagram`] : [`${keyword} instagram`]))
+    : keywords.flatMap((keyword) => (
+      city ? [`${keyword} ${city}`, `${keyword} near ${city} center`] : [keyword]
+    ));
   const primaryKeyword = keywords[0] || 'baby clothing store';
-  const primaryQuery = city ? `${primaryKeyword} ${city}` : primaryKeyword;
+  const primaryQuery = city ? `${primaryKeyword} ${city}${isInstagram ? ' instagram' : ''}` : primaryKeyword;
   const groupLabel = keywordGroups[taskForm.keywordGroup] || 'Bebek/Cocuk Giyim Magazasi';
 
   return {
@@ -149,7 +164,9 @@ function buildAutomaticSearchPlan(taskForm, selectedPreset, aiSearchPlan) {
     queries,
     primaryKeyword,
     primaryQuery,
-    name: [taskForm.country, city, groupLabel, 'Akilli Arama'].filter(Boolean).join(' '),
+    name: [taskForm.country, city, groupLabel, isInstagram ? 'Instagram Arama' : 'Akilli Arama'].filter(Boolean).join(' '),
+    sourceType: taskForm.sourceType,
+    channelLabel: isInstagram ? 'Instagram profil' : 'Google Places',
     provider: aiSearchPlan?.provider || 'LOCAL_PRESET',
     summary: aiSearchPlan?.summary || '',
     recommendedCities: aiSearchPlan?.recommendedCities || [],
@@ -469,7 +486,7 @@ export default function App() {
     }
   }
 
-  async function createAndRunGoogleSearch(event) {
+  async function createAndRunSmartSearch(event) {
     event.preventDefault();
     const allowDuplicate = Boolean(searchHistory?.alreadyCompleted || searchHistory?.hasExistingTask);
     if (allowDuplicate) {
@@ -481,7 +498,7 @@ export default function App() {
     setLastRunSummary(null);
     setIsCreatingTask(true);
     try {
-      const created = await apiPost('/search-tasks', getAutomaticTaskPayload({ sourceType: 'GOOGLE_PLACES', allowDuplicate }));
+      const created = await apiPost('/search-tasks', getAutomaticTaskPayload({ sourceType: taskForm.sourceType, allowDuplicate }));
       await refresh();
       await runTask(created.id);
     } catch (err) {
@@ -681,6 +698,7 @@ export default function App() {
         city: lead.city,
         phone: lead.internationalPhoneNumber || lead.phone,
         website: lead.website,
+        instagram: lead.instagram,
         googleMapsUrl: lead.googleMapsUrl,
         rating: lead.rating,
         userRatingsTotal: lead.userRatingsTotal,
@@ -838,8 +856,16 @@ export default function App() {
           </div>
         
           <div className="workspace-grid command-workspace">
-          <form className="smart-search-form" onSubmit={createAndRunGoogleSearch}>
+          <form className="smart-search-form" onSubmit={createAndRunSmartSearch}>
             <div className="smart-search-controls">
+              <label>
+                Kaynak
+                <select value={taskForm.sourceType} onChange={(e) => updateTaskForm({ sourceType: e.target.value })}>
+                  <option value="GOOGLE_PLACES">Google Places</option>
+                  <option value="INSTAGRAM">Instagram</option>
+                  <option value="DEMO">Demo</option>
+                </select>
+              </label>
               <label>
                 Ulke
                 <select value={selectedPresetCode} onChange={(e) => applyCountryPreset(balkanCountryPresets.find((preset) => preset.code === e.target.value) || balkanCountryPresets[0])}>
@@ -867,7 +893,7 @@ export default function App() {
                 <p>
                   {isPlanningSearch
                     ? 'AI ulke, sehir ve keyword analizini hazirliyor.'
-                    : `${automaticSearchPlan.queries.length} Google Places sorgusu otomatik calisacak. Sistem sadece bebek giyim ve cocuk giyim magazalarini hedefler.`}
+                    : `${automaticSearchPlan.queries.length} ${automaticSearchPlan.channelLabel} sorgusu otomatik calisacak. Sistem sadece bebek giyim ve cocuk giyim magazalarini hedefler.`}
                 </p>
               </div>
               <div className="smart-plan-meta">
@@ -942,7 +968,7 @@ export default function App() {
               </p>
             )}
             <button type="submit" disabled={isCreatingTask || !!runningTaskId}>
-              <Search size={15} /> {isCreatingTask || runningTaskId ? 'Çalışıyor' : 'Google Araması Çalıştır'}
+              <Search size={15} /> {isCreatingTask || runningTaskId ? 'Calisiyor' : `${sourceTypeLabels[taskForm.sourceType] || 'Arama'} Calistir`}
             </button>
             <button className="secondary-button" type="button" disabled={isCreatingTask} onClick={createTask}>Sadece Görev Oluştur</button>
           </form>
@@ -1165,6 +1191,9 @@ export default function App() {
                   <a className={!selectedLead.website ? 'disabled-link' : ''} href={selectedLead.website || undefined} rel="noreferrer" target="_blank">
                     <Globe size={16} /> Site
                   </a>
+                  <a className={!selectedLead.instagram ? 'disabled-link' : ''} href={selectedLead.instagram || undefined} rel="noreferrer" target="_blank">
+                    <MessageCircle size={16} /> Instagram
+                  </a>
                   <a className={!selectedLead.googleMapsUrl ? 'disabled-link' : ''} href={selectedLead.googleMapsUrl || undefined} rel="noreferrer" target="_blank">
                     <MapPin size={16} /> Maps
                   </a>
@@ -1175,6 +1204,7 @@ export default function App() {
                 <dl>
                   <dt>Telefon</dt><dd>{selectedLead.internationalPhoneNumber || selectedLead.phone || '-'}</dd>
                   <dt>Website</dt><dd>{selectedLead.website || '-'}</dd>
+                  <dt>Instagram</dt><dd>{selectedLead.instagram || '-'}</dd>
                   <dt>Maps</dt><dd>{selectedLead.googleMapsUrl || '-'}</dd>
                   <dt>Puan</dt><dd>{selectedLead.rating || '-'} ({selectedLead.userRatingsTotal || 0})</dd>
                   <dt>Durum</dt><dd>{selectedLead.businessStatus || '-'}</dd>

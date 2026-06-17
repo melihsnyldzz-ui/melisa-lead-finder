@@ -167,6 +167,7 @@ function compactRunLead(lead, status, reason = null) {
     city: lead.city,
     phone: lead.internationalPhoneNumber || lead.phone || null,
     website: lead.website || null,
+    instagram: lead.instagram || null,
     googleMapsUrl: lead.googleMapsUrl || null,
     rating: lead.rating || null,
     userRatingsTotal: lead.userRatingsTotal || 0,

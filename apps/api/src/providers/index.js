@@ -1,10 +1,12 @@
 import { runDemoSearch } from './demoProvider.js';
 import { runGooglePlacesSearch } from './googlePlacesProvider.js';
+import { runInstagramSearch } from './instagramProvider.js';
 import { getGeminiStatus } from '../services/geminiLeadAnalyzer.js';
 
 const providers = {
   DEMO: runDemoSearch,
   GOOGLE_PLACES: runGooglePlacesSearch,
+  INSTAGRAM: runInstagramSearch,
 };
 
 const providerMetadata = {
@@ -32,8 +34,8 @@ const providerMetadata = {
   },
   INSTAGRAM: {
     label: 'Instagram',
-    implemented: false,
-    configured: false,
+    implemented: true,
+    configured: true,
   },
   MANUAL: {
     label: 'Manual',
