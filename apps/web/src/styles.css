@@ -121,6 +121,30 @@ p { color: #6e5a4f; }
 .smart-strategy-list { margin: 0; padding-left: 18px; display: grid; gap: 4px; color: #6e5a4f; font-size: 13px; line-height: 1.35; }
 .smart-search-form > input, .smart-search-form > select { display: none; }
 .run-summary-panel { background: #fff; border: 1px solid #eadfd5; border-radius: 10px; padding: 10px; }
+.instagram-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, .36fr); gap: 12px; align-items: center; margin-bottom: 14px; border-radius: 10px; }
+.instagram-hero h2 { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.instagram-hero p { margin: 0; max-width: 760px; line-height: 1.45; }
+.instagram-provider-card { display: grid; gap: 4px; background: #fff; border: 1px solid #eadfd5; border-radius: 10px; padding: 12px; }
+.instagram-provider-card span, .instagram-provider-card small { color: #8a7466; font-size: 12px; font-weight: 800; }
+.instagram-provider-card strong { color: #261a16; font-size: 18px; }
+.instagram-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr); gap: 14px; margin-bottom: 14px; }
+.instagram-search-panel { display: grid; gap: 8px; border-radius: 10px; }
+.instagram-search-panel label { display: grid; gap: 5px; color: #6e5a4f; font-size: 13px; font-weight: 900; }
+.instagram-search-panel input, .instagram-search-panel select { margin-bottom: 0; }
+.instagram-search-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.instagram-summary-panel { border-radius: 10px; }
+.instagram-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.instagram-run-summary { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; background: #fff; border: 1px solid #eadfd5; border-radius: 10px; padding: 10px; }
+.instagram-run-summary strong { width: 100%; color: #261a16; }
+.instagram-run-summary span { border-radius: 999px; background: #edf7ef; color: #245c34; padding: 5px 8px; font-size: 12px; font-weight: 900; }
+.instagram-lead-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+.instagram-lead-card { display: grid; gap: 8px; background: #fff; border: 1px solid #eadfd5; border-radius: 10px; padding: 12px; }
+.instagram-card-header { display: grid; grid-template-columns: minmax(0, 1fr) 50px; gap: 8px; align-items: center; }
+.instagram-card-header strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.instagram-lead-card small { color: #8a7466; font-size: 12px; font-weight: 800; }
+.instagram-lead-card p { margin: 0; font-size: 13px; line-height: 1.38; }
+.instagram-card-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.instagram-card-links a, .instagram-card-links button { justify-content: center; min-height: 36px; border-radius: 8px; padding: 8px; font-size: 12px; white-space: nowrap; }
 .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
 h2 { font-size: 18px; margin: 0; }
 .panel-header span { color: #8a7466; font-size: 13px; }
@@ -220,7 +244,7 @@ dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 1100px) {
   .app-shell { flex-direction: column; }
   .sidebar { width: auto; }
-  .kpi-grid, .workspace-grid, .bottom-grid, .safety-grid, .country-map-layout, .ai-profile-grid, .settings-status-grid, .ai-run-report-columns, .smart-search-controls { grid-template-columns: 1fr; }
+  .kpi-grid, .workspace-grid, .bottom-grid, .safety-grid, .country-map-layout, .ai-profile-grid, .settings-status-grid, .ai-run-report-columns, .smart-search-controls, .instagram-hero, .instagram-grid { grid-template-columns: 1fr; }
   .world-map { min-height: 300px; }
   .leaflet-country-label { display: none; }
   .lead-action-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }

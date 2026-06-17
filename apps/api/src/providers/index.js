@@ -36,6 +36,8 @@ const providerMetadata = {
     label: 'Instagram',
     implemented: true,
     configured: true,
+    mode: process.env.APIFY_TOKEN && (process.env.APIFY_INSTAGRAM_ACTOR_ID || process.env.INSTAGRAM_APIFY_ACTOR_ID) ? 'APIFY' : 'LOCAL_CANDIDATES',
+    optionalEnv: 'APIFY_TOKEN + APIFY_INSTAGRAM_ACTOR_ID',
   },
   MANUAL: {
     label: 'Manual',

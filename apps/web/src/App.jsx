@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Bot, Copy, Download, Flame, Globe, MapPin, MessageCircle, Phone, Play, Save, Search, Settings, ThumbsDown, ThumbsUp, UsersRound } from 'lucide-react';
+import { Bot, Copy, Download, Flame, Globe, Instagram as InstagramIcon, MapPin, MessageCircle, Phone, Play, Save, Search, Settings, ThumbsDown, ThumbsUp, UsersRound } from 'lucide-react';
 import { balkanCountryPresets } from './lib/countryPresets.js';
 import { countryMarketProfiles } from './lib/countryMarketProfiles.js';
 import { apiGet, apiPatch, apiPost, exportCsvUrl } from './lib/api.js';
@@ -85,6 +85,14 @@ const pilotDefaults = {
   query: 'baby clothing store Bucharest',
   sourceType: 'GOOGLE_PLACES',
   maxResults: 50,
+};
+
+const instagramDefaults = {
+  country: 'Bulgaria',
+  city: 'Varna',
+  query: 'baby kids clothing boutique Varna instagram',
+  sourceKeyword: 'baby kids clothing boutique',
+  maxResults: 20,
 };
 
 function getErrorMessage(error) {
@@ -187,8 +195,12 @@ export default function App() {
   const [selectedLead, setSelectedLead] = useState(null);
   const [filters, setFilters] = useState({ country: '', city: '', minScore: '', q: '', status: '' });
   const [taskForm, setTaskForm] = useState(pilotDefaults);
+  const [instagramForm, setInstagramForm] = useState(instagramDefaults);
+  const [instagramLeads, setInstagramLeads] = useState([]);
+  const [instagramSummary, setInstagramSummary] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [isRunningInstagramSearch, setIsRunningInstagramSearch] = useState(false);
   const [isSavingCompanyProfile, setIsSavingCompanyProfile] = useState(false);
   const [isTestingGemini, setIsTestingGemini] = useState(false);
   const [geminiTest, setGeminiTest] = useState(null);
@@ -211,6 +223,8 @@ export default function App() {
   const markerLayerRef = useRef(null);
 
   const hotLeads = useMemo(() => leads.filter((lead) => lead.leadScore >= 80 || lead.status === 'HOT'), [leads]);
+  const hotInstagramLeads = useMemo(() => instagramLeads.filter((lead) => lead.leadScore >= 80 || lead.status === 'HOT'), [instagramLeads]);
+  const likedInstagramLeads = useMemo(() => instagramLeads.filter((lead) => lead.userFeedback === 'LIKED'), [instagramLeads]);
   const selectedPreset = useMemo(
     () => balkanCountryPresets.find((preset) => preset.code === selectedPresetCode),
     [selectedPresetCode],
@@ -236,6 +250,16 @@ export default function App() {
   const selectedLeadWhatsappHref = selectedLeadPhone
     ? `https://wa.me/${normalizePhoneForWhatsApp(selectedLeadPhone)}`
     : '';
+  const pageTitle = activeView === 'settings'
+    ? 'AI Ayarlari'
+    : activeView === 'instagram'
+      ? 'Instagram Arama Paneli'
+      : 'Lead Finder Paneli';
+  const pageDescription = activeView === 'settings'
+    ? 'Firma bilgilerini, hedef musteri profilini ve Gemini AI baglantisini yonet.'
+    : activeView === 'instagram'
+      ? 'Instagram odakli sanal magaza ve bebek/cocuk giyim profil adaylarini ayri kanalda takip et.'
+      : 'Hedef ulke, sehir ve anahtar kelime gruplariyla Avrasya bebek ve cocuk giyim musteri adaylarini bul.';
 
   async function refresh() {
     const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value !== '')).toString();
@@ -256,9 +280,21 @@ export default function App() {
     setSelectedLead((current) => leadsData.find((lead) => lead.id === current?.id) || leadsData[0] || null);
   }
 
+  async function refreshInstagramLeads() {
+    const params = new URLSearchParams({
+      sourceType: 'INSTAGRAM',
+      ...(instagramForm.country ? { country: instagramForm.country } : {}),
+      ...(instagramForm.city ? { city: instagramForm.city } : {}),
+    }).toString();
+    const data = await apiGet(`/leads?${params}`);
+    setInstagramLeads(data);
+    return data;
+  }
+
   useEffect(() => {
     Promise.all([
       refresh(),
+      refreshInstagramLeads(),
       apiGet('/providers').then(setProviders),
       apiGet('/ai/company-profile').then(setCompanyProfile),
     ])
@@ -359,6 +395,46 @@ export default function App() {
       next.name = [next.country, city, keywordGroups[next.keywordGroup] || next.keywordGroup].filter(Boolean).join(' ');
     }
     setTaskForm(next);
+  }
+
+  function updateInstagramForm(patch) {
+    const next = { ...instagramForm, ...patch };
+    const keyword = patch.sourceKeyword ?? next.sourceKeyword;
+    const city = patch.city ?? next.city;
+    if (patch.sourceKeyword !== undefined || patch.city !== undefined) {
+      next.query = [keyword, city, 'instagram'].filter(Boolean).join(' ');
+    }
+    setInstagramForm(next);
+  }
+
+  async function runInstagramPanelSearch(event) {
+    event.preventDefault();
+    setError(null);
+    setMessage(null);
+    setInstagramSummary(null);
+    setIsRunningInstagramSearch(true);
+    try {
+      const created = await apiPost('/search-tasks', {
+        name: `${instagramForm.country} ${instagramForm.city} Instagram Bebek/Cocuk Giyim Arama`,
+        country: instagramForm.country,
+        city: instagramForm.city,
+        language: 'auto',
+        keywordGroup: 'baby/kids retail',
+        sourceKeyword: instagramForm.sourceKeyword,
+        query: instagramForm.query,
+        sourceType: 'INSTAGRAM',
+        maxResults: Number(instagramForm.maxResults),
+        allowDuplicate: true,
+      });
+      const summary = await apiPost(`/search-tasks/${created.id}/run`, {});
+      setInstagramSummary(summary);
+      await Promise.all([refresh(), refreshInstagramLeads()]);
+      setMessage(`${summary.foundCount || 0} Instagram profili bulundu, ${summary.createdCount || 0} yeni lead eklendi`);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setIsRunningInstagramSearch(false);
+    }
   }
 
   function getAutomaticTaskPayload(overrides = {}) {
@@ -535,6 +611,7 @@ export default function App() {
       });
       setSelectedLead((current) => (current?.id === updated.id ? updated : current));
       setLeads((current) => current.map((lead) => (lead.id === updated.id ? updated : lead)));
+      setInstagramLeads((current) => current.map((lead) => (lead.id === updated.id ? updated : lead)));
       setMessage(`Lead geri bildirimi kaydedildi: ${feedbackLabels[userFeedback]}`);
     } catch (err) {
       setError(getErrorMessage(err));
@@ -733,6 +810,7 @@ export default function App() {
         <nav>
           <button className={`nav-item ${activeView === 'leads' ? 'active' : ''}`} onClick={() => setActiveView('leads')} type="button"><UsersRound size={18} /> Lead Paneli</button>
           <button className="nav-item" onClick={() => setActiveView('leads')} type="button"><Search size={18} /> Arama Gorevleri</button>
+          <button className={`nav-item ${activeView === 'instagram' ? 'active' : ''}`} onClick={() => setActiveView('instagram')} type="button"><InstagramIcon size={18} /> Instagram Paneli</button>
           <button className={`nav-item ${activeView === 'settings' ? 'active' : ''}`} onClick={() => setActiveView('settings')} type="button"><Settings size={18} /> Ayarlar</button>
         </nav>
       </aside>
@@ -740,12 +818,8 @@ export default function App() {
       <main className="main-area">
         <header className="topbar">
           <div>
-            <h1>{activeView === 'settings' ? 'AI Ayarlari' : 'Lead Finder Paneli'}</h1>
-            <p>
-              {activeView === 'settings'
-                ? 'Firma bilgilerini, hedef musteri profilini ve Gemini AI baglantisini yonet.'
-                : 'Hedef ulke, sehir ve anahtar kelime gruplariyla Avrasya bebek ve cocuk giyim musteri adaylarini bul.'}
-            </p>
+            <h1>{pageTitle}</h1>
+            <p>{pageDescription}</p>
           </div>
           {activeView === 'leads' && <a className="primary-link" href={exportCsvUrl(currentFilterQuery)}><Download size={17} /> CSV Disa Aktar</a>}
         </header>
@@ -1265,6 +1339,132 @@ export default function App() {
             ))}
           </div>
         </section>
+          </>
+        )}
+
+        {activeView === 'instagram' && (
+          <>
+            <section className="instagram-hero panel">
+              <div>
+                <h2><InstagramIcon size={20} /> Instagram Arama Motoru</h2>
+                <p>Bu sayfa sadece Instagram kaynakli sanal magazalari, butik profil adaylarini ve WhatsApp/satis sinyallerini takip eder.</p>
+              </div>
+              <div className="instagram-provider-card">
+                <span>Baglanti modu</span>
+                <strong>{providers.INSTAGRAM?.mode === 'APIFY' ? 'Apify canli actor' : 'Yerel aday motoru'}</strong>
+                <small>{providers.INSTAGRAM?.mode === 'APIFY' ? 'APIFY_TOKEN ve APIFY_INSTAGRAM_ACTOR_ID aktif.' : 'Ayarlar icin .env: APIFY_TOKEN + APIFY_INSTAGRAM_ACTOR_ID eklenince canli scraper calisir.'}</small>
+              </div>
+            </section>
+
+            <section className="instagram-grid">
+              <form className="panel instagram-search-panel" onSubmit={runInstagramPanelSearch}>
+                <div className="panel-header">
+                  <h2>Profil Arama</h2>
+                  <span>Bebek/cocuk giyim odakli</span>
+                </div>
+                <label>
+                  Ulke
+                  <input required value={instagramForm.country} onChange={(e) => updateInstagramForm({ country: e.target.value })} />
+                </label>
+                <label>
+                  Sehir / Bolge
+                  <input value={instagramForm.city} onChange={(e) => updateInstagramForm({ city: e.target.value })} />
+                </label>
+                <label>
+                  Arama niyeti
+                  <select value={instagramForm.sourceKeyword} onChange={(e) => updateInstagramForm({ sourceKeyword: e.target.value })}>
+                    <option value="baby kids clothing boutique">baby kids clothing boutique</option>
+                    <option value="kidswear boutique">kidswear boutique</option>
+                    <option value="babywear shop">babywear shop</option>
+                    <option value="bebek giyim butik">bebek giyim butik</option>
+                    <option value="cocuk giyim butik">cocuk giyim butik</option>
+                    <option value="children wear shop">children wear shop</option>
+                  </select>
+                </label>
+                <label>
+                  Sorgu
+                  <input required value={instagramForm.query} onChange={(e) => setInstagramForm({ ...instagramForm, query: e.target.value })} />
+                </label>
+                <label>
+                  Maksimum profil
+                  <input required min="1" max="50" type="number" value={instagramForm.maxResults} onChange={(e) => setInstagramForm({ ...instagramForm, maxResults: e.target.value })} />
+                </label>
+                <div className="instagram-search-actions">
+                  <button disabled={isRunningInstagramSearch} type="submit">
+                    <InstagramIcon size={16} /> {isRunningInstagramSearch ? 'Araniyor' : 'Instagram Profilleri Ara'}
+                  </button>
+                  <button className="secondary-button" disabled={isRunningInstagramSearch} onClick={refreshInstagramLeads} type="button">Listeyi Yenile</button>
+                </div>
+              </form>
+
+              <div className="panel instagram-summary-panel">
+                <div className="panel-header">
+                  <h2>Takip Ozeti</h2>
+                  <span>{instagramLeads.length} Instagram lead</span>
+                </div>
+                <div className="instagram-kpis">
+                  <Kpi title="Instagram Lead" value={instagramLeads.length} />
+                  <Kpi title="Sicak" value={hotInstagramLeads.length} />
+                  <Kpi title="Begenilen" value={likedInstagramLeads.length} />
+                  <Kpi title="Canli Mod" value={providers.INSTAGRAM?.mode === 'APIFY' ? 'Apify' : 'Yerel'} />
+                </div>
+                {instagramSummary ? (
+                  <div className="instagram-run-summary">
+                    <strong>Son Instagram aramasi</strong>
+                    <span>Bulunan {instagramSummary.foundCount || 0}</span>
+                    <span>Eklenen {instagramSummary.createdCount || 0}</span>
+                    <span>Tekrar {instagramSummary.duplicateCount || 0}</span>
+                  </div>
+                ) : (
+                  <p>Arama calistirinca bulunan profiller, eklenen leadler ve tekrarlar burada gorunur.</p>
+                )}
+              </div>
+            </section>
+
+            <section className="panel wide-panel">
+              <div className="panel-header">
+                <h2>Instagram Adaylari</h2>
+                <span>{instagramForm.country} {instagramForm.city}</span>
+              </div>
+              <div className="instagram-lead-grid">
+                {instagramLeads.length === 0 && <div className="empty-state">Bu ulke/sehir icin Instagram lead yok. Ilk aramayi calistir.</div>}
+                {instagramLeads.map((lead) => (
+                  <article className="instagram-lead-card" key={lead.id}>
+                    <div className="instagram-card-header">
+                      <strong>{lead.companyName}</strong>
+                      <span className={lead.leadScore >= 80 ? 'score hot' : 'score'}>{lead.leadScore}</span>
+                    </div>
+                    <small>{lead.city || lead.country} - {lead.sourceKeyword || 'Instagram profil'}</small>
+                    <p>{lead.scoreReason || lead.categoryGuess || 'Instagram profil adayi'}</p>
+                    <div className="instagram-card-links">
+                      <a className={!lead.instagram ? 'disabled-link' : ''} href={lead.instagram || undefined} rel="noreferrer" target="_blank"><InstagramIcon size={15} /> Profil</a>
+                      <a className={!lead.whatsapp && !lead.phone ? 'disabled-link' : ''} href={(lead.whatsapp || lead.phone) ? `https://wa.me/${normalizePhoneForWhatsApp(lead.whatsapp || lead.phone)}` : undefined} rel="noreferrer" target="_blank"><MessageCircle size={15} /> WhatsApp</a>
+                      <button onClick={() => { setSelectedLead(lead); setActiveView('leads'); }} type="button">Detaya Al</button>
+                    </div>
+                    <div className="lead-feedback-actions">
+                      <button
+                        aria-label="Instagram lead begenildi"
+                        className={lead.userFeedback === 'LIKED' ? 'active' : ''}
+                        disabled={updatingLeadFeedback === lead.id}
+                        onClick={() => updateLeadFeedback(lead.id, lead.userFeedback === 'LIKED' ? 'NONE' : 'LIKED')}
+                        type="button"
+                      >
+                        <ThumbsUp size={14} />
+                      </button>
+                      <button
+                        aria-label="Instagram lead begenilmedi"
+                        className={lead.userFeedback === 'DISLIKED' ? 'active negative' : ''}
+                        disabled={updatingLeadFeedback === lead.id}
+                        onClick={() => updateLeadFeedback(lead.id, lead.userFeedback === 'DISLIKED' ? 'NONE' : 'DISLIKED')}
+                        type="button"
+                      >
+                        <ThumbsDown size={14} />
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
           </>
         )}
 

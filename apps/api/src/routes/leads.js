@@ -54,15 +54,17 @@ const updateLeadSchema = createLeadSchema.partial().extend({
 const listLeadsQuerySchema = z.object({
   country: z.string().trim().optional(),
   city: z.string().trim().optional(),
+  sourceType: sourceTypeSchema.optional(),
   status: leadStatusSchema.optional(),
   minScore: z.coerce.number().int().min(0).max(100).optional(),
   q: z.string().trim().optional(),
 });
 
-function buildLeadWhere({ country, city, status, minScore, q }) {
+function buildLeadWhere({ country, city, sourceType, status, minScore, q }) {
   return {
     ...(country ? { country: { contains: String(country), mode: 'insensitive' } } : {}),
     ...(city ? { city: { contains: String(city), mode: 'insensitive' } } : {}),
+    ...(sourceType ? { sourceType } : {}),
     ...(status ? { status } : { status: { not: 'REJECTED' } }),
     ...(minScore !== undefined ? { leadScore: { gte: minScore } } : {}),
     ...(q ? { companyName: { contains: String(q), mode: 'insensitive' } } : {}),
