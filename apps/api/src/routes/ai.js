@@ -218,8 +218,10 @@ function compactRunForStrategy(run) {
   };
 }
 
-router.post('/process-strategy', async (_req, res, next) => {
+router.post('/process-strategy', async (req, res, next) => {
   try {
+    const input = searchPlanSchema.parse(req.body);
+    const countryWhere = { country: { equals: input.countryPreset.name, mode: 'insensitive' } };
     const companyProfile = await getCompanyProfile(prisma);
     const [
       totalLeads,
@@ -231,28 +233,31 @@ router.post('/process-strategy', async (_req, res, next) => {
       instagramCoverage,
       recentRuns,
     ] = await Promise.all([
-      prisma.lead.count(),
-      prisma.lead.count({ where: { status: 'HOT' } }),
-      prisma.lead.count({ where: { status: 'REVIEW' } }),
-      prisma.lead.count({ where: { userFeedback: 'LIKED' } }),
-      prisma.lead.count({ where: { userFeedback: 'DISLIKED' } }),
+      prisma.lead.count({ where: countryWhere }),
+      prisma.lead.count({ where: { ...countryWhere, status: 'HOT' } }),
+      prisma.lead.count({ where: { ...countryWhere, status: 'REVIEW' } }),
+      prisma.lead.count({ where: { ...countryWhere, userFeedback: 'LIKED' } }),
+      prisma.lead.count({ where: { ...countryWhere, userFeedback: 'DISLIKED' } }),
       prisma.searchRunHistory.findMany({
-        where: { sourceType: 'GOOGLE_PLACES' },
+        where: { ...countryWhere, sourceType: 'GOOGLE_PLACES' },
         orderBy: { ranAt: 'desc' },
         take: 120,
       }),
       prisma.searchRunHistory.findMany({
-        where: { sourceType: 'INSTAGRAM' },
+        where: { ...countryWhere, sourceType: 'INSTAGRAM' },
         orderBy: { ranAt: 'desc' },
         take: 120,
       }),
       prisma.searchRunHistory.findMany({
+        where: countryWhere,
         orderBy: { ranAt: 'desc' },
         take: 20,
       }),
     ]);
 
     const payload = {
+      countryPreset: input.countryPreset,
+      marketProfile: input.marketProfile,
       companyProfile,
       stats: {
         total: totalLeads,
@@ -263,7 +268,7 @@ router.post('/process-strategy', async (_req, res, next) => {
       },
       googleCoverage: summarizeRunPerformance(googleCoverage),
       instagramCoverage: summarizeRunPerformance(instagramCoverage),
-      feedback: await summarizeLeadFeedback(),
+      feedback: await summarizeLeadFeedback(input.countryPreset.name),
       recentRuns: recentRuns.map(compactRunForStrategy),
     };
 

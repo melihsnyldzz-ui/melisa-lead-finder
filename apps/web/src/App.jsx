@@ -616,13 +616,25 @@ export default function App() {
   }
 
   async function loadAiProcessStrategy() {
+    if (!selectedPreset) {
+      setError('Gemini surec stratejisi icin once haritadan desteklenen bir ulke secilmeli');
+      return null;
+    }
     setError(null);
     setMessage(null);
     setIsLoadingProcessStrategy(true);
     try {
-      const strategy = await apiPost('/ai/process-strategy', {});
+      const strategy = await apiPost('/ai/process-strategy', {
+        countryPreset: {
+          code: selectedPreset.code,
+          name: selectedPreset.name,
+          cities: selectedPreset.cities,
+          queries: selectedPreset.queries,
+        },
+        marketProfile: selectedMarketProfile || null,
+      });
       setAiProcessStrategy(strategy);
-      setMessage(strategy.provider === 'GEMINI' ? 'Gemini surec stratejisi hazir' : 'Yerel surec stratejisi hazir');
+      setMessage(strategy.provider === 'GEMINI' ? `${selectedPreset.name} icin Gemini surec stratejisi hazir` : `${selectedPreset.name} icin yerel surec stratejisi hazir`);
       return strategy;
     } catch (err) {
       setError(getErrorMessage(err));
@@ -1051,7 +1063,7 @@ export default function App() {
           <section className={`panel process-strategy-panel ${aiProcessStrategy.provider === 'GEMINI' ? 'gemini-source' : ''}`}>
             <div className="panel-header">
               <h2><Bot size={18} /> Gemini Surec Stratejisi</h2>
-              <span>{aiProcessStrategy.provider === 'GEMINI' ? 'Canli Gemini' : 'Yerel analiz'} - Guven %{Math.round((aiProcessStrategy.confidence || 0) * 100)}</span>
+              <span>{selectedPreset?.name || taskForm.country} - {aiProcessStrategy.provider === 'GEMINI' ? 'Canli Gemini' : 'Yerel analiz'} - Guven %{Math.round((aiProcessStrategy.confidence || 0) * 100)}</span>
             </div>
             <p>{aiProcessStrategy.summary}</p>
             {aiProcessStrategy.aiError && <p className="field-note warning">{aiProcessStrategy.aiError}</p>}
