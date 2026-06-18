@@ -1,3 +1,5 @@
+import { isBabyKidsClothingLead } from '../services/leadScoring.js';
+
 const instagramProfiles = [
   { handle: 'mini.style', label: 'Mini Style', signal: 'kids clothing boutique', followers: 18400 },
   { handle: 'baby.corner', label: 'Baby Corner', signal: 'baby clothing shop', followers: 12700 },
@@ -31,6 +33,11 @@ function applyTemplate(value, task) {
   return JSON.parse(JSON.stringify(value).replaceAll('{{query}}', task.query || '').replaceAll('{{city}}', task.city || '').replaceAll('{{country}}', task.country || '').replaceAll('{{maxResults}}', String(task.maxResults || 20)));
 }
 
+function getDiscoveryLimit(maxResults) {
+  const requested = Number(maxResults) || 20;
+  return Math.max(20, Math.min(50, requested * 4));
+}
+
 function buildApifyInput(task) {
   if (process.env.APIFY_INSTAGRAM_INPUT_TEMPLATE) {
     try {
@@ -47,7 +54,7 @@ function buildApifyInput(task) {
     return {
       search: task.query,
       searchType: inferredSearchType,
-      searchLimit: Number(task.maxResults) || 20,
+      searchLimit: getDiscoveryLimit(task.maxResults),
       enhanceUserSearchWithFacebookPage: false,
     };
   }
@@ -56,8 +63,8 @@ function buildApifyInput(task) {
     search: task.query,
     query: task.query,
     searchType: inferredSearchType,
-    resultsLimit: Number(task.maxResults) || 20,
-    maxItems: Number(task.maxResults) || 20,
+    resultsLimit: getDiscoveryLimit(task.maxResults),
+    maxItems: getDiscoveryLimit(task.maxResults),
   };
 }
 
@@ -178,6 +185,7 @@ async function runApifyInstagramSearch(task) {
   return (Array.isArray(items) ? items : [])
     .map((item, index) => buildLeadFromApifyItem(task, item, index))
     .filter(Boolean)
+    .filter((lead) => isBabyKidsClothingLead(lead))
     .slice(0, Number(task.maxResults) || 20);
 }
 

@@ -561,10 +561,13 @@ Create a detailed Instagram discovery plan that finds virtual stores, baby cloth
 Rules:
 - Return Turkish explanations, but search queries can be English, Turkish, and local language.
 - First interpret the selected country's Instagram selling habits, common languages, and buyer behavior from countryPreset.languageHints and marketProfile.
+- Search like a human would search inside Instagram. For Turkey, prioritize exact Turkish terms like "bebek giyim", "cocuk giyim", "bebek butik", "bebek kiyafet", then city variants like "bebek giyim Istanbul". Do not start Turkey with English "kidswear boutique" or "baby clothing boutique" unless local terms fail.
+- For every country, the first 3-5 searchQueries must come from local baby/kids clothing words in countryPreset.languageHints.instagramHabits or countryPreset.queries. English variants are secondary.
 - Focus on Instagram profiles that look like real businesses with product posts, catalog/order language, WhatsApp, website, address, or store/boutique wording.
 - Include local language keywords, transliterated variants, English variants, boutique terms, online shop terms, WhatsApp/order terms, and kidswear/babywear variants.
 - Query order must match the country's habits: local Instagram store terms first, then English/international terms.
 - Include city-specific Instagram queries for the selected country cities.
+- Include both cityless broad Instagram searches and city-specific searches. Cityless local queries often find better profiles than over-specific city queries.
 - Prefer searchType "user" because the current actor inserts profile leads; use hashtag/place only as secondary discovery ideas.
 - Do not target toy-only pages, schools, clinics, playgrounds, mother blogs, influencers, personal baby accounts, adult fashion only, or unrelated marketplaces.
 - Make queries broad enough to find sellers, but strict enough that every query implies baby/kids clothing sales.
@@ -931,34 +934,67 @@ function normalizeInstagramSearchType(value) {
   return ['user', 'hashtag', 'place'].includes(value) ? value : 'user';
 }
 
-function clampInstagramSearchPlan(value, countryPreset = {}) {
-  const cities = Array.isArray(countryPreset.cities) ? countryPreset.cities : [];
-  const fallbackCity = cities[0] || '';
-  const fallbackQueries = [
-    `baby clothing boutique ${fallbackCity}`.trim(),
-    `kidswear boutique ${fallbackCity}`.trim(),
-    `children clothing store ${fallbackCity}`.trim(),
-    `babywear shop ${fallbackCity}`.trim(),
-  ];
-  const rawQueries = Array.isArray(value.searchQueries) ? value.searchQueries : [];
-  const searchQueries = rawQueries
+function uniqueInstagramQueries(items, max = 10) {
+  const seen = new Set();
+  return items
     .map((item) => ({
       query: String(item?.query || item?.keyword || item?.search || '').trim(),
       searchType: normalizeInstagramSearchType(item?.searchType),
       priority: ['high', 'medium', 'low'].includes(item?.priority) ? item.priority : 'medium',
       reason: String(item?.reason || item?.why || '').slice(0, 240),
     }))
-    .filter((item) => item.query)
-    .slice(0, 10);
+    .filter((item) => {
+      if (!item.query) return false;
+      const key = `${item.searchType}:${item.query.toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, max);
+}
 
-  const normalizedQueries = searchQueries.length
-    ? searchQueries
-    : fallbackQueries.map((query, index) => ({
+function buildLocalInstagramSeedQueries(countryPreset = {}) {
+  const cities = Array.isArray(countryPreset.cities) ? countryPreset.cities : [];
+  const primaryCity = cities[0] || '';
+  const languageHints = countryPreset.languageHints || {};
+  const habitTerms = Array.isArray(languageHints.instagramHabits) ? languageHints.instagramHabits : [];
+  const presetQueries = Array.isArray(countryPreset.queries) ? countryPreset.queries : [];
+  const localTerms = normalizeStringArray([
+    ...(countryPreset.code === 'TR'
+      ? ['bebek giyim', 'cocuk giyim', 'bebek butik', 'bebek kiyafet', 'bebek giyim butik', 'cocuk giyim butik']
+      : []),
+    ...habitTerms,
+    ...presetQueries.filter((query) => !/baby clothing store|kids clothing store|children/i.test(String(query))),
+  ], [], 12);
+  const fallbackTerms = ['baby clothing shop', 'kids clothing shop', 'baby kids boutique', 'children wear shop'];
+  const terms = localTerms.length ? localTerms : fallbackTerms;
+  const cityTerms = primaryCity ? terms.slice(0, 4).map((term) => `${term} ${primaryCity}`) : [];
+
+  return uniqueInstagramQueries([
+    ...terms.slice(0, 5).map((query, index) => ({
       query,
       searchType: 'user',
-      priority: index === 0 ? 'high' : 'medium',
-      reason: index === 0 ? 'Ilk Instagram profil kesfi icin en guclu genel sorgu.' : 'Kapsami genisletmek icin alternatif profil sorgusu.',
-    }));
+      priority: index < 3 ? 'high' : 'medium',
+      reason: 'Instagram icinde genis ama hedef odakli yerel profil aramasi.',
+    })),
+    ...cityTerms.map((query, index) => ({
+      query,
+      searchType: 'user',
+      priority: index < 2 ? 'high' : 'medium',
+      reason: 'Secili sehir icin yerel bebek/cocuk giyim profil aramasi.',
+    })),
+  ], 8);
+}
+
+function clampInstagramSearchPlan(value, countryPreset = {}) {
+  const cities = Array.isArray(countryPreset.cities) ? countryPreset.cities : [];
+  const seedQueries = buildLocalInstagramSeedQueries(countryPreset);
+  const rawQueries = Array.isArray(value.searchQueries) ? value.searchQueries : [];
+  const searchQueries = uniqueInstagramQueries(rawQueries, 10);
+
+  const normalizedQueries = searchQueries.length
+    ? uniqueInstagramQueries([...seedQueries, ...searchQueries], 10)
+    : seedQueries;
 
   return {
     provider: 'GEMINI',
@@ -971,7 +1007,10 @@ function clampInstagramSearchPlan(value, countryPreset = {}) {
       'children wear online shops',
       'babywear retailers with WhatsApp in bio',
     ], 8),
-    searchQueries: normalizedQueries,
+    searchQueries: normalizedQueries.length ? normalizedQueries : uniqueInstagramQueries([
+      { query: 'baby clothing shop', searchType: 'user', priority: 'high', reason: 'Son fallback Instagram profil sorgusu.' },
+      { query: 'kids clothing shop', searchType: 'user', priority: 'medium', reason: 'Son fallback Instagram profil sorgusu.' },
+    ]),
     positiveSignals: normalizeStringArray(value.positiveSignals, [
       'bio contains babywear, kidswear, children clothing, boutique, shop',
       'WhatsApp, phone, website, or store address exists',
@@ -1170,18 +1209,11 @@ export function buildFallbackInstagramSearchPlan({ countryPreset = {}, marketPro
     ...cities.filter((city) => !searchedCities.has(city)),
     ...cities.filter((city) => searchedCities.has(city)),
   ].slice(0, 4);
-  const primaryCity = cityFocus[0] || cities[0] || '';
   const localKeywords = normalizeStringArray(countryPreset.queries || [], [], 8);
-  const keywords = [
-    'baby clothing boutique',
-    'kidswear boutique',
-    'children clothing shop',
-    'babywear shop',
-    'kidswear online shop',
-    'baby boutique whatsapp',
-    'kids fashion store',
-    ...localKeywords,
-  ];
+  const searchQueries = buildLocalInstagramSeedQueries({
+    ...countryPreset,
+    cities: cityFocus.length ? cityFocus : cities,
+  });
 
   return clampInstagramSearchPlan({
     summary: marketProfile?.salesNotes?.length
@@ -1195,12 +1227,7 @@ export function buildFallbackInstagramSearchPlan({ countryPreset = {}, marketPro
       'babywear retailers',
       'kids fashion sellers with WhatsApp',
     ],
-    searchQueries: keywords.slice(0, 8).map((keyword, index) => ({
-      query: [keyword, primaryCity].filter(Boolean).join(' '),
-      searchType: 'user',
-      priority: index < 3 ? 'high' : 'medium',
-      reason: index < 3 ? 'Hedef profil sinyali guclu ana Instagram sorgusu.' : 'Yerel varyasyonla kapsam genisletme sorgusu.',
-    })),
+    searchQueries,
     positiveSignals: [
       'bio veya ad kisminda baby, kids, children, boutique, shop, wear sinyali',
       'WhatsApp, telefon, web sitesi veya adres bulunmasi',

@@ -530,7 +530,10 @@ export default function App() {
   function applyInstagramPreset(preset) {
     const searchProfile = getCountrySearchProfile(preset);
     const city = preset.cities[0];
-    const sourceKeyword = preset.queries.find((query) => !query.includes('baby clothing store') && !query.includes('kids clothing store')) || preset.queries[0] || 'baby clothing boutique';
+    const sourceKeyword = searchProfile.instagramHabits?.[0]
+      || preset.queries.find((query) => !query.includes('baby clothing store') && !query.includes('kids clothing store'))
+      || preset.queries[0]
+      || 'baby clothing shop';
     setInstagramAiPlan(null);
     setInstagramSummary(null);
     setInstagramForm((current) => ({
@@ -538,7 +541,7 @@ export default function App() {
       country: preset.name,
       city,
       sourceKeyword,
-      query: [sourceKeyword, city, searchProfile.instagramHabits?.[0] || 'instagram'].filter(Boolean).join(' '),
+      query: preset.code === 'TR' ? sourceKeyword : [sourceKeyword, city].filter(Boolean).join(' '),
     }));
   }
 
