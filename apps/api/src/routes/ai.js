@@ -107,19 +107,82 @@ function summarizeRunPerformance(coverage) {
   };
 }
 
-async function summarizeLeadFeedback(country) {
+function extractLearningTerms(lead) {
+  const text = [
+    lead.companyName,
+    lead.displayName,
+    lead.categoryGuess,
+    lead.sourceKeyword,
+    lead.sourceQuery,
+    lead.rawPayload?.bio,
+    ...(lead.types || []),
+  ].filter(Boolean).join(' ').toLowerCase();
+  const terms = [
+    'bebek giyim',
+    'cocuk giyim',
+    'çocuk giyim',
+    'bebek butik',
+    'cocuk butik',
+    'çocuk butik',
+    'bebek kiyafet',
+    'çocuk kiyafet',
+    'kidswear',
+    'babywear',
+    'baby clothing',
+    'kids clothing',
+    'children wear',
+    'boutique',
+    'butik',
+    'magaza',
+    'mağaza',
+    'shop',
+    'online shop',
+    'whatsapp',
+    'siparis',
+    'sipariş',
+    'katalog',
+    'toptan',
+    'wholesale',
+  ];
+  return terms.filter((term) => text.includes(term));
+}
+
+function topCounts(values, max = 10) {
+  const counts = values.reduce((acc, value) => {
+    const key = String(value || '').trim();
+    if (!key) return acc;
+    acc.set(key, (acc.get(key) || 0) + 1);
+    return acc;
+  }, new Map());
+  return [...counts.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    .slice(0, max);
+}
+
+function cleanLearningValue(value) {
+  return String(value || '').trim().replace(/^(user|hashtag|place):\s*/i, '');
+}
+
+async function summarizeLeadFeedback(country, sourceType = null) {
   const feedbackLeads = await prisma.lead.findMany({
     where: {
       ...(country ? { country: { equals: country, mode: 'insensitive' } } : {}),
+      ...(sourceType ? { sourceType } : {}),
       userFeedback: { in: ['LIKED', 'DISLIKED'] },
     },
     orderBy: { userFeedbackAt: 'desc' },
     take: 200,
     select: {
       companyName: true,
+      displayName: true,
       city: true,
       sourceKeyword: true,
       sourceQuery: true,
+      sourceType: true,
+      categoryGuess: true,
+      types: true,
+      rawPayload: true,
       leadScore: true,
       userFeedback: true,
       userFeedbackAt: true,
@@ -127,11 +190,12 @@ async function summarizeLeadFeedback(country) {
   });
 
   const grouped = feedbackLeads.reduce((acc, lead) => {
-    const key = `${lead.city || 'No city'}|${lead.sourceKeyword || lead.sourceQuery || 'No keyword'}`;
+    const learnedKeyword = cleanLearningValue(lead.sourceKeyword || lead.sourceQuery || 'No keyword');
+    const key = `${lead.city || 'No city'}|${learnedKeyword}`;
     if (!acc.has(key)) {
       acc.set(key, {
         city: lead.city,
-        keyword: lead.sourceKeyword || lead.sourceQuery,
+        keyword: learnedKeyword,
         liked: 0,
         disliked: 0,
         averageScoreSum: 0,
@@ -159,11 +223,19 @@ async function summarizeLeadFeedback(country) {
     averageScore: item.averageScoreCount ? Math.round(item.averageScoreSum / item.averageScoreCount) : null,
     examples: item.examples,
   })).sort((a, b) => b.preferenceScore - a.preferenceScore);
+  const likedLeads = feedbackLeads.filter((lead) => lead.userFeedback === 'LIKED');
+  const dislikedLeads = feedbackLeads.filter((lead) => lead.userFeedback === 'DISLIKED');
 
   return {
     totalFeedback: feedbackLeads.length,
     likedPatterns: patterns.filter((item) => item.preferenceScore > 0).slice(0, 8),
     dislikedPatterns: patterns.filter((item) => item.preferenceScore < 0).reverse().slice(0, 8),
+    likedCities: topCounts(likedLeads.map((lead) => lead.city), 8),
+    dislikedCities: topCounts(dislikedLeads.map((lead) => lead.city), 8),
+    likedKeywords: topCounts(likedLeads.map((lead) => cleanLearningValue(lead.sourceKeyword || lead.sourceQuery)), 10),
+    dislikedKeywords: topCounts(dislikedLeads.map((lead) => cleanLearningValue(lead.sourceKeyword || lead.sourceQuery)), 10),
+    likedTerms: topCounts(likedLeads.flatMap(extractLearningTerms), 12),
+    dislikedTerms: topCounts(dislikedLeads.flatMap(extractLearningTerms), 12),
   };
 }
 
@@ -324,7 +396,7 @@ router.post('/search-plan', async (req, res, next) => {
       totalRuns: coverage.length,
       cities: [...coverageByCity.values()],
       performance: summarizeRunPerformance(coverage),
-      userFeedback: await summarizeLeadFeedback(input.countryPreset.name),
+      userFeedback: await summarizeLeadFeedback(input.countryPreset.name, 'GOOGLE_PLACES'),
     };
 
     try {
@@ -389,7 +461,7 @@ router.post('/instagram-search-plan', async (req, res, next) => {
       totalRuns: coverage.length,
       cities: [...coverageByCity.values()],
       performance: summarizeRunPerformance(coverage),
-      userFeedback: await summarizeLeadFeedback(input.countryPreset.name),
+      userFeedback: await summarizeLeadFeedback(input.countryPreset.name, 'INSTAGRAM'),
     };
 
     try {

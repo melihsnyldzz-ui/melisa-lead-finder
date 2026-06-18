@@ -519,7 +519,9 @@ Rules:
 - Use coverage.performance.bestCities and bestKeywords as positive signals.
 - Avoid or lower coverage.performance.weakCities and weakKeywords unless there is too little data.
 - Treat coverage.userFeedback.likedPatterns as the strongest signal of what Melisa prefers.
+- Treat coverage.userFeedback.likedTerms, likedKeywords, and likedCities as direct instructions for the next search. Promote matching terms and cities.
 - Avoid or lower coverage.userFeedback.dislikedPatterns unless there is too little data.
+- Treat coverage.userFeedback.dislikedTerms and dislikedKeywords as exclusion/downrank signals.
 - If previous searches found many duplicates but few created leads, suggest a different city or more specific local keyword.
 - Return only one valid JSON object. Do not write markdown, code fences, explanations, or text before/after JSON.
 - Use exactly this shape:
@@ -572,6 +574,8 @@ Rules:
 - Do not target toy-only pages, schools, clinics, playgrounds, mother blogs, influencers, personal baby accounts, adult fashion only, or unrelated marketplaces.
 - Make queries broad enough to find sellers, but strict enough that every query implies baby/kids clothing sales.
 - Use previous liked/disliked lead feedback as the strongest learning signal.
+- Treat coverage.userFeedback.likedTerms, likedKeywords, likedCities, and likedPatterns as direct instructions for next Instagram queries.
+- Avoid or downrank coverage.userFeedback.dislikedTerms, dislikedKeywords, and dislikedPatterns.
 - If previous Instagram searches are weak, make queries more specific and local.
 - Return only one valid JSON object. Do not write markdown, code fences, explanations, or any text before/after JSON.
 - Use exactly this shape:
@@ -986,6 +990,18 @@ function buildLocalInstagramSeedQueries(countryPreset = {}) {
   ], 8);
 }
 
+function feedbackNames(items = []) {
+  return Array.isArray(items) ? items.map((item) => item?.name || item?.keyword || item?.city).filter(Boolean) : [];
+}
+
+function feedbackPatternKeywords(items = []) {
+  return Array.isArray(items) ? items.map((item) => item?.keyword).filter(Boolean) : [];
+}
+
+function feedbackPatternCities(items = []) {
+  return Array.isArray(items) ? items.map((item) => item?.city).filter(Boolean) : [];
+}
+
 function clampInstagramSearchPlan(value, countryPreset = {}) {
   const cities = Array.isArray(countryPreset.cities) ? countryPreset.cities : [];
   const seedQueries = buildLocalInstagramSeedQueries(countryPreset);
@@ -1130,29 +1146,54 @@ export function buildFallbackProcessStrategy({ countryPreset = {}, stats = {}, g
 
 export function buildFallbackSearchPlan({ countryPreset = {}, marketProfile = {}, coverage = null } = {}) {
   const cities = Array.isArray(countryPreset.cities) ? countryPreset.cities : [];
+  const feedback = coverage?.userFeedback || {};
   const searchedCities = new Set((coverage?.cities || [])
     .filter((city) => city.completedRuns > 0)
     .map((city) => city.city));
   const bestCities = (coverage?.performance?.bestCities || [])
     .filter((item) => cities.includes(item.name) && item.createdCount > 0)
     .map((item) => item.name);
+  const likedCities = [
+    ...feedbackNames(feedback.likedCities),
+    ...feedbackPatternCities(feedback.likedPatterns),
+  ].filter((city) => cities.includes(city));
   const weakCities = new Set((coverage?.performance?.weakCities || []).map((item) => item.name));
+  const dislikedCities = new Set([
+    ...feedbackNames(feedback.dislikedCities),
+    ...feedbackPatternCities(feedback.dislikedPatterns),
+  ]);
   const orderedCities = [
+    ...likedCities,
     ...bestCities,
-    ...cities.filter((city) => !searchedCities.has(city)),
-    ...cities.filter((city) => searchedCities.has(city) && !weakCities.has(city) && !bestCities.includes(city)),
-    ...cities.filter((city) => weakCities.has(city) && !bestCities.includes(city)),
+    ...cities.filter((city) => !searchedCities.has(city) && !dislikedCities.has(city)),
+    ...cities.filter((city) => searchedCities.has(city) && !weakCities.has(city) && !bestCities.includes(city) && !dislikedCities.has(city)),
+    ...cities.filter((city) => (weakCities.has(city) || dislikedCities.has(city)) && !bestCities.includes(city) && !likedCities.includes(city)),
   ].slice(0, 5);
   const dedupedOrderedCities = [...new Set(orderedCities)];
-  const primaryFallbackCity = dedupedOrderedCities.find((city) => !weakCities.has(city)) || dedupedOrderedCities[0] || cities[0] || '';
+  const primaryFallbackCity = dedupedOrderedCities.find((city) => likedCities.includes(city))
+    || dedupedOrderedCities.find((city) => !weakCities.has(city) && !dislikedCities.has(city))
+    || dedupedOrderedCities[0]
+    || cities[0]
+    || '';
   const bestKeywords = (coverage?.performance?.bestKeywords || [])
     .filter((item) => item.createdCount > 0)
     .map((item) => item.name);
+  const likedKeywords = [
+    ...feedbackNames(feedback.likedKeywords),
+    ...feedbackPatternKeywords(feedback.likedPatterns),
+    ...feedbackNames(feedback.likedTerms),
+  ];
   const weakKeywords = new Set((coverage?.performance?.weakKeywords || []).map((item) => item.name));
+  const dislikedKeywords = new Set([
+    ...feedbackNames(feedback.dislikedKeywords),
+    ...feedbackPatternKeywords(feedback.dislikedPatterns),
+    ...feedbackNames(feedback.dislikedTerms),
+  ]);
   const presetKeywords = normalizeStringArray(countryPreset.queries || [], [], 8);
   const learnedLocalKeywords = normalizeStringArray([
+    ...likedKeywords,
     ...bestKeywords,
-    ...presetKeywords.filter((keyword) => !weakKeywords.has(keyword)),
+    ...presetKeywords.filter((keyword) => !weakKeywords.has(keyword) && !dislikedKeywords.has(keyword)),
   ], presetKeywords, 8);
 
   return {
@@ -1202,16 +1243,36 @@ export function buildFallbackSearchPlan({ countryPreset = {}, marketProfile = {}
 
 export function buildFallbackInstagramSearchPlan({ countryPreset = {}, marketProfile = {}, coverage = null } = {}) {
   const cities = Array.isArray(countryPreset.cities) ? countryPreset.cities : [];
+  const feedback = coverage?.userFeedback || {};
   const searchedCities = new Set((coverage?.cities || [])
     .filter((city) => city.completedRuns > 0)
     .map((city) => city.city));
+  const likedCities = [
+    ...feedbackNames(feedback.likedCities),
+    ...feedbackPatternCities(feedback.likedPatterns),
+  ].filter((city) => cities.includes(city));
   const cityFocus = [
+    ...likedCities,
     ...cities.filter((city) => !searchedCities.has(city)),
-    ...cities.filter((city) => searchedCities.has(city)),
+    ...cities.filter((city) => searchedCities.has(city) && !likedCities.includes(city)),
   ].slice(0, 4);
   const localKeywords = normalizeStringArray(countryPreset.queries || [], [], 8);
+  const likedTerms = [
+    ...feedbackNames(feedback.likedTerms),
+    ...feedbackNames(feedback.likedKeywords),
+    ...feedbackPatternKeywords(feedback.likedPatterns),
+  ];
+  const dislikedTerms = new Set([
+    ...feedbackNames(feedback.dislikedTerms),
+    ...feedbackNames(feedback.dislikedKeywords),
+    ...feedbackPatternKeywords(feedback.dislikedPatterns),
+  ]);
   const searchQueries = buildLocalInstagramSeedQueries({
     ...countryPreset,
+    queries: normalizeStringArray([
+      ...likedTerms,
+      ...localKeywords.filter((keyword) => !dislikedTerms.has(keyword)),
+    ], localKeywords, 12),
     cities: cityFocus.length ? cityFocus : cities,
   });
 
@@ -1242,6 +1303,7 @@ export function buildFallbackInstagramSearchPlan({ countryPreset = {}, marketPro
       'adult fashion only',
       'school, clinic, playground',
       'private or empty profile',
+      ...feedbackNames(feedback.dislikedTerms).map((term) => `gecmiste begenilmeyen sinyal: ${term}`),
     ],
     hashtags: ['#kidswear', '#babywear', '#kidsboutique', '#childrensclothing'],
     localKeywords,
