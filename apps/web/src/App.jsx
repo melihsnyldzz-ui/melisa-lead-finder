@@ -307,12 +307,16 @@ export default function App() {
     ? 'AI Ayarlari'
     : activeView === 'instagram'
       ? 'Instagram Musteri Bul'
-      : 'Google Magaza Bul';
+      : activeView === 'allLeads'
+        ? 'Lead Havuzu'
+        : 'Google Magaza Bul';
   const pageDescription = activeView === 'settings'
     ? 'Firma bilgilerini, hedef musteri profilini ve Gemini AI baglantisini yonet.'
     : activeView === 'instagram'
       ? 'Instagramda satis yapan bebek/cocuk giyim butiklerini, WhatsApp siparis profillerini ve sanal magazalari bul.'
-      : 'Google ile fiziksel bebek/cocuk giyim magazalarini, butiklerini ve potansiyel toptan alicilari bul.';
+      : activeView === 'allLeads'
+        ? 'Tum lead havuzunu filtrele, detaylarini incele ve Gemini icin begeni verisi topla.'
+        : 'Google ile fiziksel bebek/cocuk giyim magazalarini, butiklerini ve potansiyel toptan alicilari bul.';
 
   async function refresh() {
     const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value !== '')).toString();
@@ -898,7 +902,8 @@ export default function App() {
   function selectRunResult(result) {
     if (!result?.id) return;
     const lead = leads.find((item) => item.id === result.id);
-    if (lead) setSelectedLead(lead);
+    setSelectedLead(lead || result);
+    setActiveView('allLeads');
   }
 
   function compactLeadForRunView(lead, status = 'found') {
@@ -1001,6 +1006,7 @@ export default function App() {
         </div>
         <nav>
           <button className={`nav-item ${activeView === 'leads' ? 'active' : ''}`} onClick={() => setActiveView('leads')} type="button"><UsersRound size={18} /> Bul</button>
+          <button className={`nav-item ${activeView === 'allLeads' ? 'active' : ''}`} onClick={() => setActiveView('allLeads')} type="button"><UsersRound size={18} /> Leadler</button>
           <button className={`nav-item ${activeView === 'instagram' ? 'active' : ''}`} onClick={() => setActiveView('instagram')} type="button"><InstagramIcon size={18} /> Instagram</button>
           <button className={`nav-item ${activeView === 'settings' ? 'active' : ''}`} onClick={() => setActiveView('settings')} type="button"><Settings size={18} /> Ayarlar</button>
         </nav>
@@ -1012,7 +1018,7 @@ export default function App() {
             <h1>{pageTitle}</h1>
             <p>{pageDescription}</p>
           </div>
-          {activeView === 'leads' && <a className="primary-link" href={exportCsvUrl(currentFilterQuery)}><Download size={17} /> CSV Disa Aktar</a>}
+          {activeView === 'allLeads' && <a className="primary-link" href={exportCsvUrl(currentFilterQuery)}><Download size={17} /> CSV Disa Aktar</a>}
         </header>
 
         {(error || message) && <div className={`notice ${error ? 'error' : 'success'}`}>{error || message}</div>}
@@ -1377,6 +1383,11 @@ export default function App() {
           </div>
         </section>
 
+          </>
+        )}
+
+        {activeView === 'allLeads' && (
+          <>
         <section className="workspace-grid">
           <div className="panel wide-panel">
             <div className="panel-header">
@@ -1558,6 +1569,12 @@ export default function App() {
             ) : <p>Lead seç.</p>}
           </div>
         </section>
+
+          </>
+        )}
+
+        {activeView === 'leads' && (
+          <>
 
         <details className="panel wide-panel advanced-panel">
           <summary>Gecmis aramalar ve teknik gorevler</summary>
@@ -1749,7 +1766,7 @@ export default function App() {
                     <div className="instagram-card-links">
                       <a className={!lead.instagram ? 'disabled-link' : ''} href={lead.instagram || undefined} rel="noreferrer" target="_blank"><InstagramIcon size={15} /> Profil</a>
                       <a className={!lead.whatsapp && !lead.phone ? 'disabled-link' : ''} href={(lead.whatsapp || lead.phone) ? `https://wa.me/${normalizePhoneForWhatsApp(lead.whatsapp || lead.phone)}` : undefined} rel="noreferrer" target="_blank"><MessageCircle size={15} /> WhatsApp</a>
-                      <button onClick={() => { setSelectedLead(lead); setActiveView('leads'); }} type="button">Detaya Al</button>
+                      <button onClick={() => { setSelectedLead(lead); setActiveView('allLeads'); }} type="button">Detaya Al</button>
                     </div>
                     <div className="lead-feedback-actions">
                       <button
