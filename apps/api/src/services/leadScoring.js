@@ -32,6 +32,9 @@ const CLOTHING_TERMS = [
   'apparel',
   'garment',
   'boutique',
+  'retailer',
+  'online store',
+  'online shop',
   'giyim',
   'kiyafet',
   'kıyafet',
@@ -95,6 +98,14 @@ const RETAIL_TERMS = [
   'boutique',
   'mağaza',
   'magaza',
+  'dukkan',
+  'dükkan',
+  'butik',
+  'siparis',
+  'sipariş',
+  'whatsapp',
+  'catalog',
+  'katalog',
   'магазин',
   'крама',
   'խանութ',
@@ -103,6 +114,40 @@ const RETAIL_TERMS = [
   'doʻkoni',
   'dükөнү',
   'дүкені',
+];
+
+const SALES_READY_TERMS = [
+  'whatsapp',
+  'order',
+  'orders',
+  'catalog',
+  'catalogue',
+  'retail',
+  'retailer',
+  'boutique',
+  'online shop',
+  'online store',
+  'delivery',
+  'shipping',
+  'siparis',
+  'sipariş',
+  'katalog',
+  'toptan',
+  'wholesale',
+  'dm for order',
+  'link in bio',
+];
+
+const LOW_INTENT_PROFILE_TERMS = [
+  'blog',
+  'influencer',
+  'personal blog',
+  'mom blog',
+  'mummy blog',
+  'photography',
+  'model',
+  'fan page',
+  'community',
 ];
 
 const UNRELATED_TYPES = [
@@ -217,6 +262,9 @@ function buildResultText(lead) {
     lead.companyName,
     lead.displayName,
     lead.categoryGuess,
+    lead.notes,
+    lead.rawPayload?.bio,
+    ...(lead.rawPayload?.bioSignals || []),
     ...(lead.types || []),
   ].filter(Boolean).join(' ').toLowerCase();
 }
@@ -296,6 +344,10 @@ export function scoreLead(lead) {
     score += 10;
     reasons.push('instagram-only baby/kids clothing sales channel');
   }
+  if (includesAny(resultText, SALES_READY_TERMS)) {
+    score += lead.sourceType === 'INSTAGRAM' ? 12 : 6;
+    reasons.push('sales-ready shop signal');
+  }
   if ((lead.rawPayload?.followers || 0) >= 5000) {
     score += 10;
     reasons.push('instagram audience signal');
@@ -332,6 +384,10 @@ export function scoreLead(lead) {
   if (includesAny(text, UNRELATED_TERMS) && !isTarget) {
     score -= 25;
     reasons.push('unrelated product signal');
+  }
+  if (lead.sourceType === 'INSTAGRAM' && includesAny(resultText, LOW_INTENT_PROFILE_TERMS) && !includesAny(resultText, SALES_READY_TERMS)) {
+    score -= 20;
+    reasons.push('low-intent social profile');
   }
   if (!hasClothingSignal) {
     score -= 25;

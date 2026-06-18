@@ -458,14 +458,18 @@ ${JSON.stringify(coverage || null, null, 2)}
 
 Goal:
 Before starting Google Places, decide where and what to search in this country.
+Find physical stores, boutiques, retailers, and children's wear shops that could buy wholesale baby/kids clothing from Melisa.
 
 Rules:
 - Return a practical Turkish plan.
 - Choose the strongest first city for baby/kids clothing retail discovery.
 - Recommend 3-6 cities from the provided country city list when possible.
-- Keywords must target only baby clothing stores, kids clothing stores, children's boutiques, and children's wear retailers.
+- Keywords must target only baby clothing stores, kids clothing stores, children's boutiques, children's wear retailers, baby boutiques, and kidswear shops.
+- Prefer retailer/store/boutique/shop terms over broad product-only terms.
+- Each keyword must include both clothing intent and baby/kids audience intent, unless it is a strong local-language equivalent.
 - Include English keywords and local-language keywords when useful.
-- Do not suggest schools, clinics, playgrounds, toy-only shops, supermarkets, or adult fashion.
+- Do not suggest schools, clinics, playgrounds, toy-only shops, supermarkets, adult fashion, pharmacies, malls, or broad baby product stores without clothing proof.
+- If a query is too broad, make it more specific with boutique, shop, retailer, kidswear, babywear, or local-language clothing words.
 - If coverage shows a city was already searched successfully, lower its priority unless it still deserves a re-check.
 - Use coverage.performance.bestCities and bestKeywords as positive signals.
 - Avoid or lower coverage.performance.weakCities and weakKeywords unless there is too little data.
@@ -507,14 +511,15 @@ Existing Instagram search coverage and feedback:
 ${JSON.stringify(coverage || null, null, 2)}
 
 Goal:
-Create a detailed Instagram discovery plan that finds virtual stores, baby clothing shops, kids clothing boutiques, children's wear sellers, and wholesale-capable retail profiles.
+Create a detailed Instagram discovery plan that finds virtual stores, baby clothing shops, kids clothing boutiques, children's wear sellers, WhatsApp order profiles, and wholesale-capable retail profiles.
 
 Rules:
 - Return Turkish explanations, but search queries can be English, Turkish, and local language.
-- Focus on Instagram profiles that look like real businesses, not personal influencer accounts.
-- Include local language keywords, transliterated variants, English variants, and boutique/online shop terms.
+- Focus on Instagram profiles that look like real businesses with product posts, catalog/order language, WhatsApp, website, address, or store/boutique wording.
+- Include local language keywords, transliterated variants, English variants, boutique terms, online shop terms, WhatsApp/order terms, and kidswear/babywear variants.
 - Prefer searchType "user" because the current actor inserts profile leads; use hashtag/place only as secondary discovery ideas.
-- Do not target toy-only pages, schools, clinics, playgrounds, mother blogs, personal baby accounts, adult fashion only, or unrelated marketplaces.
+- Do not target toy-only pages, schools, clinics, playgrounds, mother blogs, influencers, personal baby accounts, adult fashion only, or unrelated marketplaces.
+- Make queries broad enough to find sellers, but strict enough that every query implies baby/kids clothing sales.
 - Use previous liked/disliked lead feedback as the strongest learning signal.
 - If previous Instagram searches are weak, make queries more specific and local.
 - Return only one valid JSON object. Do not write markdown, code fences, explanations, or any text before/after JSON.
@@ -938,15 +943,19 @@ export function buildFallbackSearchPlan({ countryPreset = {}, marketProfile = {}
     keywords: [
       'baby clothing store',
       'kids clothing store',
-      "children's clothing store",
-      "children's wear store",
+      "children's clothing boutique",
+      'baby clothes shop',
       'kids fashion store',
+      "children's wear retailer",
+      'baby boutique',
+      'kidswear store',
       'baby kids clothing store',
     ],
     localKeywords: learnedLocalKeywords,
     searchStrategy: [
       'Once en yuksek oncelikli sehirde 20-30 sonuc ile kalite testi yap.',
       'Telefon ve websitesi olan leadleri onceliklendir.',
+      'Magaza, butik, retailer ve shop sinyali tasiyan sonuclari yukari al.',
       'Sonra ayni ulkede ikinci ve ucuncu sehre gec.',
       'Zayif sonuclarda yerel dil keywordlerini one al.',
     ],
@@ -972,6 +981,8 @@ export function buildFallbackInstagramSearchPlan({ countryPreset = {}, marketPro
     'kidswear boutique',
     'children clothing shop',
     'babywear shop',
+    'kidswear online shop',
+    'baby boutique whatsapp',
     'kids fashion store',
     ...localKeywords,
   ];
@@ -997,6 +1008,7 @@ export function buildFallbackInstagramSearchPlan({ countryPreset = {}, marketPro
     positiveSignals: [
       'bio veya ad kisminda baby, kids, children, boutique, shop, wear sinyali',
       'WhatsApp, telefon, web sitesi veya adres bulunmasi',
+      'order, catalog, delivery, online shop veya siparis dili',
       'urun katalogu gibi gorunen son paylasimlar',
       'magaza/butik ismi ve fiyat/siparis dili',
     ],

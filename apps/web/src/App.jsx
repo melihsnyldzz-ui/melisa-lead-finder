@@ -24,8 +24,8 @@ const feedbackLabels = {
 
 const sourceTypeLabels = {
   DEMO: 'Demo',
-  GOOGLE_PLACES: 'Google Places',
-  INSTAGRAM: 'Instagram',
+  GOOGLE_PLACES: 'Google Magaza Bul',
+  INSTAGRAM: 'Instagram Musteri Bul',
 };
 
 const taskStatusLabels = {
@@ -52,18 +52,32 @@ const keywordGroups = {
 const automaticSearchKeywords = [
   'baby clothing store',
   'kids clothing store',
-  "children's clothing store",
-  "children's wear store",
+  "children's clothing boutique",
+  'baby clothes shop',
   'kids fashion store',
+  "children's wear retailer",
+  'baby boutique',
+  'kids boutique',
   'baby kids clothing store',
+  'children clothing shop',
+  'baby clothing retailer',
+  'kidswear store',
 ];
 
 const instagramSearchKeywords = [
   'baby clothing boutique',
   'kids clothing boutique',
   'children wear shop',
-  'babywear',
-  'kidswear',
+  'babywear shop',
+  'kidswear store',
+  'children boutique',
+  'baby kids boutique',
+  'baby boutique online',
+  'kidswear online shop',
+  'bebek giyim butik',
+  'cocuk giyim butik',
+  'bebek magaza',
+  'cocuk butik',
   'bebek giyim',
   'cocuk giyim',
   'çocuk giyim',
@@ -202,7 +216,10 @@ function buildAutomaticSearchPlan(taskForm, selectedPreset, aiSearchPlan) {
     primaryQuery,
     name: [taskForm.country, city, groupLabel, isInstagram ? 'Instagram Arama' : 'Akilli Arama'].filter(Boolean).join(' '),
     sourceType: taskForm.sourceType,
-    channelLabel: isInstagram ? 'Instagram profil' : 'Google Places',
+    channelLabel: isInstagram ? 'Instagram satis profili' : 'Google magaza',
+    channelGoal: isInstagram
+      ? 'Instagram uzerinden satis yapan sanal magaza, butik ve WhatsApp siparis profilleri aranir.'
+      : 'Google uzerinde fiziksel bebek/cocuk giyim magazasi, butik ve perakendeci aranir.',
     provider: aiSearchPlan?.provider || 'LOCAL_PRESET',
     summary: aiSearchPlan?.summary || '',
     recommendedCities: aiSearchPlan?.recommendedCities || [],
@@ -287,13 +304,13 @@ export default function App() {
   const pageTitle = activeView === 'settings'
     ? 'AI Ayarlari'
     : activeView === 'instagram'
-      ? 'Instagram Arama Paneli'
-      : 'Musteri Bul';
+      ? 'Instagram Musteri Bul'
+      : 'Google Magaza Bul';
   const pageDescription = activeView === 'settings'
     ? 'Firma bilgilerini, hedef musteri profilini ve Gemini AI baglantisini yonet.'
     : activeView === 'instagram'
-      ? 'Instagram odakli sanal magaza ve bebek/cocuk giyim profil adaylarini ayri kanalda takip et.'
-      : 'Ulke sec, AI plani olustursun, Google ve Instagram kaynakli en iyi bebek/cocuk giyim musterilerini bul.';
+      ? 'Instagramda satis yapan bebek/cocuk giyim butiklerini, WhatsApp siparis profillerini ve sanal magazalari bul.'
+      : 'Google ile fiziksel bebek/cocuk giyim magazalarini, butiklerini ve potansiyel toptan alicilari bul.';
 
   async function refresh() {
     const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value !== '')).toString();
@@ -985,16 +1002,19 @@ export default function App() {
           <>
         <section className="apple-hero-panel">
           <div>
-            <span className="eyebrow">AI destekli musteri kesfi</span>
-            <h2>{selectedPreset?.name || taskForm.country} icin en iyi satis noktalarini bulalim.</h2>
-            <p>Haritadan ulke sec, sistem sehirleri ve arama kriterlerini sade bir plan haline getirsin. Teknik detaylar arka planda kalsin.</p>
+            <span className="eyebrow">Tek hedef: bebek/cocuk giyim alicisi</span>
+            <h2>{selectedPreset?.name || taskForm.country} icin satis yapabilecegin magazalari bulalim.</h2>
+            <p>Google fiziksel magazalari bulur, Instagram sanal satis profillerini toplar. AI sehir ve keyword planini senin icin hazirlar.</p>
           </div>
           <div className="hero-actions">
             <button disabled={isPlanningSearch} onClick={() => loadAiSearchPlan(selectedPreset)} type="button">
               <Bot size={17} /> {isPlanningSearch ? 'AI hazirlaniyor' : 'AI Plani Yenile'}
             </button>
             <button className="secondary-button" disabled={isCreatingTask || !!runningTaskId} onClick={createAndRunSmartSearch} type="button">
-              <Search size={17} /> Musteri Bul
+              <Search size={17} /> Google Magaza Bul
+            </button>
+            <button className="secondary-button" onClick={() => setActiveView('instagram')} type="button">
+              <InstagramIcon size={17} /> Instagram Musteri Bul
             </button>
           </div>
         </section>
@@ -1106,8 +1126,8 @@ export default function App() {
               <label>
                 Kaynak
                 <select value={taskForm.sourceType} onChange={(e) => updateTaskForm({ sourceType: e.target.value })}>
-                  <option value="GOOGLE_PLACES">Google Places</option>
-                  <option value="INSTAGRAM">Instagram</option>
+                  <option value="GOOGLE_PLACES">Google Magaza Bul</option>
+                  <option value="INSTAGRAM">Instagram Musteri Bul</option>
                   <option value="DEMO">Demo</option>
                 </select>
               </label>
@@ -1138,7 +1158,7 @@ export default function App() {
                 <p>
                   {isPlanningSearch
                     ? 'AI ulke, sehir ve keyword analizini hazirliyor.'
-                    : `${automaticSearchPlan.queries.length} ${automaticSearchPlan.channelLabel} sorgusu otomatik calisacak. Sistem sadece bebek giyim ve cocuk giyim magazalarini hedefler.`}
+                    : `${automaticSearchPlan.queries.length} ${automaticSearchPlan.channelLabel} sorgusu otomatik calisacak. ${automaticSearchPlan.channelGoal}`}
                 </p>
               </div>
               <div className="smart-plan-meta">
@@ -1544,8 +1564,8 @@ export default function App() {
           <>
             <section className="instagram-hero panel">
               <div>
-                <h2><InstagramIcon size={20} /> Instagram Arama Motoru</h2>
-                <p>Bu sayfa sadece Instagram kaynakli sanal magazalari, butik profil adaylarini ve WhatsApp/satis sinyallerini takip eder.</p>
+                <h2><InstagramIcon size={20} /> Instagram Musteri Bul</h2>
+                <p>Bu sayfa Instagramda satis yapan bebek/cocuk giyim butiklerini, sanal magazalari ve WhatsApp siparis profillerini toplar.</p>
               </div>
               <div className="instagram-provider-card">
                 <span>Baglanti modu</span>
@@ -1557,8 +1577,8 @@ export default function App() {
             <section className="instagram-grid">
               <form className="panel instagram-search-panel" onSubmit={runInstagramPanelSearch}>
                 <div className="panel-header">
-                  <h2>Profil Arama</h2>
-                  <span>{instagramAiPlan?.provider === 'GEMINI' ? 'Gemini kriterleri aktif' : 'Bebek/cocuk giyim odakli'}</span>
+                  <h2>Sanal Magaza Arama</h2>
+                  <span>{instagramAiPlan?.provider === 'GEMINI' ? 'Gemini kriterleri aktif' : 'Sadece bebek/cocuk giyim'}</span>
                 </div>
                 <label>
                   Ulke
@@ -1574,8 +1594,11 @@ export default function App() {
                     <option value="baby kids clothing boutique">baby kids clothing boutique</option>
                     <option value="kidswear boutique">kidswear boutique</option>
                     <option value="babywear shop">babywear shop</option>
+                    <option value="kidswear online shop">kidswear online shop</option>
+                    <option value="baby boutique whatsapp">baby boutique whatsapp</option>
                     <option value="bebek giyim butik">bebek giyim butik</option>
                     <option value="cocuk giyim butik">cocuk giyim butik</option>
+                    <option value="bebek giyim siparis">bebek giyim siparis</option>
                     <option value="children wear shop">children wear shop</option>
                   </select>
                 </label>
