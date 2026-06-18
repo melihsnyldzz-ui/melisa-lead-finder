@@ -86,26 +86,26 @@ const instagramSearchKeywords = [
 const googlePlacesLanguageCodes = new Set(['en', 'ro', 'bg', 'de', 'tr', 'ru', 'uk', 'pl', 'el', 'sr', 'hr', 'sq', 'bs', 'sl', 'mk', 'ka', 'hy', 'az', 'kk', 'uz', 'be']);
 
 const countrySearchProfiles = {
-  AL: { languageCode: 'sq', languages: ['Albanian', 'English'], searchHabits: ['small boutiques', 'Instagram and WhatsApp contact', 'price-sensitive retail'], instagramHabits: ['boutique', 'dyqan', 'WhatsApp'] },
-  BA: { languageCode: 'bs', languages: ['Bosnian', 'Serbian', 'Croatian'], searchHabits: ['city-center retailers', 'local-language store terms', 'price-focused offers'], instagramHabits: ['prodavnica', 'boutique', 'online shop'] },
-  BG: { languageCode: 'bg', languages: ['Bulgarian', 'English'], searchHabits: ['Bulgarian Cyrillic keywords first', 'Sofia/Plovdiv/Varna split', 'EU quality expectations'], instagramHabits: ['детски дрехи', 'бутик', 'онлайн магазин'] },
-  GR: { languageCode: 'el', languages: ['Greek', 'English'], searchHabits: ['Greek keywords first', 'Athens and Thessaloniki priority', 'seasonal boutique demand'], instagramHabits: ['παιδικά ρούχα', 'boutique', 'eshop'] },
+  AL: { languageCode: 'sq', languages: ['Albanian', 'English'], searchHabits: ['small boutiques', 'Instagram and WhatsApp contact', 'price-sensitive retail'], instagramHabits: ['rroba femijesh', 'rroba bebe', 'dyqan rrobash femijesh'] },
+  BA: { languageCode: 'bs', languages: ['Bosnian', 'Serbian', 'Croatian'], searchHabits: ['city-center retailers', 'local-language store terms', 'price-focused offers'], instagramHabits: ['dječija odjeća', 'bebi odjeca', 'prodavnica dječije odjeće'] },
+  BG: { languageCode: 'bg', languages: ['Bulgarian', 'English'], searchHabits: ['Bulgarian Cyrillic keywords first', 'Sofia/Plovdiv/Varna split', 'EU quality expectations'], instagramHabits: ['детски дрехи', 'бебешки дрехи', 'детски магазин'] },
+  GR: { languageCode: 'el', languages: ['Greek', 'English'], searchHabits: ['Greek keywords first', 'Athens and Thessaloniki priority', 'seasonal boutique demand'], instagramHabits: ['παιδικά ρούχα', 'βρεφικά ρούχα', 'παιδικά ρούχα κατάστημα'] },
   RO: { languageCode: 'ro', languages: ['Romanian', 'English'], searchHabits: ['Romanian keywords first', 'website and phone are strong signals', 'large city expansion'], instagramHabits: ['haine copii', 'magazin bebe', 'butic'] },
   RS: { languageCode: 'sr', languages: ['Serbian', 'English'], searchHabits: ['Serbian keyword variants', 'Belgrade segmenting', 'price and delivery clarity'], instagramHabits: ['dečija odeća', 'prodavnica', 'butik'] },
-  TR: { languageCode: 'tr', languages: ['Turkish'], searchHabits: ['Turkish keywords first', 'district-based Istanbul searches', 'high competition and high volume', 'avoid wholesale-only search terms when looking for retailers'], instagramHabits: ['bebek giyim butik', 'çocuk giyim butik', 'WhatsApp sipariş', 'Instagram mağaza'] },
-  UA: { languageCode: 'uk', languages: ['Ukrainian', 'Russian', 'English'], searchHabits: ['Ukrainian keywords first', 'Kyiv and Lviv controlled pilots', 'logistics and payment notes'], instagramHabits: ['дитячий одяг', 'магазин', 'online shop'] },
-  RU: { languageCode: 'ru', languages: ['Russian'], searchHabits: ['Russian keywords first', 'major cities segmented', 'payment and logistics risk check'], instagramHabits: ['детская одежда', 'магазин', 'WhatsApp'] },
+  TR: { languageCode: 'tr', languages: ['Turkish'], searchHabits: ['Turkish keywords first', 'district-based Istanbul searches', 'high competition and high volume', 'avoid wholesale-only search terms when looking for retailers'], instagramHabits: ['bebek giyim', 'cocuk giyim', 'bebek butik', 'bebek kiyafet'] },
+  UA: { languageCode: 'uk', languages: ['Ukrainian', 'Russian', 'English'], searchHabits: ['Ukrainian keywords first', 'Kyiv and Lviv controlled pilots', 'logistics and payment notes'], instagramHabits: ['дитячий одяг', 'одяг для немовлят', 'магазин дитячого одягу'] },
+  RU: { languageCode: 'ru', languages: ['Russian'], searchHabits: ['Russian keywords first', 'major cities segmented', 'payment and logistics risk check'], instagramHabits: ['детская одежда', 'одежда для малышей', 'магазин детской одежды'] },
   MD: { languageCode: 'ro', languages: ['Romanian', 'Russian'], searchHabits: ['Romanian and Russian keywords together', 'Chisinau first', 'small order advantage'], instagramHabits: ['haine copii', 'magazin bebe', 'детская одежда'] },
-  PL: { languageCode: 'pl', languages: ['Polish', 'English'], searchHabits: ['Polish keywords first', 'website quality matters', 'EU label expectations'], instagramHabits: ['odzież dziecięca', 'sklep', 'boutique'] },
-  BY: { languageCode: 'ru', languages: ['Russian', 'Belarusian'], searchHabits: ['Russian keywords first', 'Minsk pilot', 'payment/logistics risk'], instagramHabits: ['детская одежда', 'магазин'] },
-  GE: { languageCode: 'ka', languages: ['Georgian', 'English', 'Russian'], searchHabits: ['Georgian and English searches together', 'Tbilisi first', 'Instagram-active shops are strong'], instagramHabits: ['ბავშვის ტანსაცმელი', 'kidswear', 'boutique'] },
-  AM: { languageCode: 'hy', languages: ['Armenian', 'Russian', 'English'], searchHabits: ['Armenian keywords first', 'Yerevan first', 'low MOQ advantage'], instagramHabits: ['մանկական հագուստ', 'խանութ', 'boutique'] },
-  AZ: { languageCode: 'az', languages: ['Azerbaijani', 'Turkish', 'Russian'], searchHabits: ['Azerbaijani and Turkish keywords together', 'Baku priority', 'Turkish outreach advantage'], instagramHabits: ['uşaq geyim', 'körpə geyim', 'butik'] },
-  KZ: { languageCode: 'ru', languages: ['Russian', 'Kazakh'], searchHabits: ['Russian and Kazakh keywords together', 'Almaty/Astana as separate pilots', 'logistics cost matters'], instagramHabits: ['детская одежда', 'балалар киімі', 'shop'] },
-  UZ: { languageCode: 'uz', languages: ['Uzbek', 'Russian'], searchHabits: ['Uzbek and Russian keywords together', 'Tashkent first', 'price-sensitive high volume'], instagramHabits: ['bolalar kiyim', 'chaqaloq kiyim', 'shop'] },
-  KG: { languageCode: 'ru', languages: ['Russian', 'Kyrgyz'], searchHabits: ['Russian keywords usually start better', 'Bishkek first', 'low MOQ and WhatsApp'], instagramHabits: ['детская одежда', 'балдар кийим', 'WhatsApp'] },
-  TJ: { languageCode: 'ru', languages: ['Russian', 'Tajik'], searchHabits: ['Russian and Tajik keywords', 'Dushanbe first', 'manual quality control'], instagramHabits: ['детская одежда', 'либоси кӯдакона'] },
-  TM: { languageCode: 'ru', languages: ['Russian', 'Turkmen'], searchHabits: ['Russian and Turkmen keywords', 'Ashgabat first', 'relationship-based market'], instagramHabits: ['детская одежда', 'çaga eşikleri'] },
+  PL: { languageCode: 'pl', languages: ['Polish', 'English'], searchHabits: ['Polish keywords first', 'website quality matters', 'EU label expectations'], instagramHabits: ['odzież dziecięca', 'ubranka dla niemowląt', 'sklep z odzieżą dziecięcą'] },
+  BY: { languageCode: 'ru', languages: ['Russian', 'Belarusian'], searchHabits: ['Russian keywords first', 'Minsk pilot', 'payment/logistics risk'], instagramHabits: ['детская одежда', 'адзенне для дзяцей', 'магазин детской одежды'] },
+  GE: { languageCode: 'ka', languages: ['Georgian', 'English', 'Russian'], searchHabits: ['Georgian and English searches together', 'Tbilisi first', 'Instagram-active shops are strong'], instagramHabits: ['ბავშვის ტანსაცმელი', 'საბავშვო ტანსაცმელი', 'ბავშვის ტანსაცმლის მაღაზია'] },
+  AM: { languageCode: 'hy', languages: ['Armenian', 'Russian', 'English'], searchHabits: ['Armenian keywords first', 'Yerevan first', 'low MOQ advantage'], instagramHabits: ['մանկական հագուստ', 'երեխաների հագուստ', 'մանկական հագուստի խանութ'] },
+  AZ: { languageCode: 'az', languages: ['Azerbaijani', 'Turkish', 'Russian'], searchHabits: ['Azerbaijani and Turkish keywords together', 'Baku priority', 'Turkish outreach advantage'], instagramHabits: ['uşaq geyim', 'körpə geyim', 'uşaq geyim mağazası'] },
+  KZ: { languageCode: 'ru', languages: ['Russian', 'Kazakh'], searchHabits: ['Russian and Kazakh keywords together', 'Almaty/Astana as separate pilots', 'logistics cost matters'], instagramHabits: ['детская одежда', 'балалар киімі', 'магазин детской одежды'] },
+  UZ: { languageCode: 'uz', languages: ['Uzbek', 'Russian'], searchHabits: ['Uzbek and Russian keywords together', 'Tashkent first', 'price-sensitive high volume'], instagramHabits: ['bolalar kiyim', 'chaqaloq kiyim', 'bolalar kiyim doʻkoni'] },
+  KG: { languageCode: 'ru', languages: ['Russian', 'Kyrgyz'], searchHabits: ['Russian keywords usually start better', 'Bishkek first', 'low MOQ and WhatsApp'], instagramHabits: ['детская одежда', 'балдар кийим', 'магазин детской одежды'] },
+  TJ: { languageCode: 'ru', languages: ['Russian', 'Tajik'], searchHabits: ['Russian and Tajik keywords', 'Dushanbe first', 'manual quality control'], instagramHabits: ['детская одежда', 'либоси кӯдакона', 'магазин детской одежды'] },
+  TM: { languageCode: 'ru', languages: ['Russian', 'Turkmen'], searchHabits: ['Russian and Turkmen keywords', 'Ashgabat first', 'relationship-based market'], instagramHabits: ['детская одежда', 'çaga eşikleri', 'çaga egin-eşikleri'] },
 };
 
 function getGooglePlacesLanguageCode(language) {
@@ -541,7 +541,7 @@ export default function App() {
       country: preset.name,
       city,
       sourceKeyword,
-      query: preset.code === 'TR' ? sourceKeyword : [sourceKeyword, city].filter(Boolean).join(' '),
+      query: sourceKeyword,
     }));
   }
 

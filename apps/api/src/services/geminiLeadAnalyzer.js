@@ -938,6 +938,42 @@ function normalizeInstagramSearchType(value) {
   return ['user', 'hashtag', 'place'].includes(value) ? value : 'user';
 }
 
+function isReadableSearchTerm(value) {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  if (text.includes('�')) return false;
+  const questionMarks = (text.match(/\?/g) || []).length;
+  return questionMarks === 0 || questionMarks / text.length < 0.2;
+}
+
+const localInstagramDiscoveryTerms = {
+  AL: ['rroba femijesh', 'dyqan rrobash femijesh', 'rroba bebe', 'veshje femijesh'],
+  BA: ['djeca odjeca', 'dječija odjeća', 'prodavnica dječije odjeće', 'bebi odjeca'],
+  BG: ['детски дрехи', 'бебешки дрехи', 'детски магазин', 'бебешки магазин'],
+  GR: ['παιδικά ρούχα', 'βρεφικά ρούχα', 'παιδικά ρούχα κατάστημα', 'βρεφικά είδη ρούχα'],
+  HR: ['dječja odjeća', 'trgovina dječje odjeće', 'bebi odjeća', 'dječji butik'],
+  XK: ['rroba femijesh', 'dyqan rrobash per femije', 'rroba bebe', 'veshje femijesh'],
+  ME: ['dječija odjeća', 'prodavnica dječije odjeće', 'bebi odjeća', 'dječji butik'],
+  MK: ['детска облека', 'бебешка облека', 'продавница за детска облека', 'детски бутик'],
+  RO: ['haine copii', 'haine bebelusi', 'magazin bebe', 'magazin haine copii'],
+  RS: ['dečija odeća', 'decija odeca', 'bebi odeća', 'prodavnica dečije odeće'],
+  SI: ['otroška oblačila', 'trgovina otroških oblačil', 'oblačila za dojenčke', 'otroški butik'],
+  TR: ['bebek giyim', 'cocuk giyim', 'bebek butik', 'bebek kiyafet', 'bebek giyim butik', 'cocuk giyim butik'],
+  UA: ['дитячий одяг', 'одяг для немовлят', 'магазин дитячого одягу', 'дитячий магазин'],
+  RU: ['детская одежда', 'одежда для малышей', 'магазин детской одежды', 'детский магазин'],
+  MD: ['haine copii', 'magazin bebe', 'haine bebelusi', 'детская одежда'],
+  PL: ['odzież dziecięca', 'ubranka dla niemowląt', 'sklep z odzieżą dziecięcą', 'dziecięcy butik'],
+  BY: ['детская одежда', 'адзенне для дзяцей', 'магазин детской одежды', 'дзіцячая крама'],
+  GE: ['ბავშვის ტანსაცმელი', 'საბავშვო ტანსაცმელი', 'ბავშვის ტანსაცმლის მაღაზია', 'kidswear tbilisi'],
+  AM: ['մանկական հագուստ', 'երեխաների հագուստ', 'մանկական հագուստի խանութ', 'baby clothes yerevan'],
+  AZ: ['uşaq geyim', 'körpə geyim', 'uşaq geyim mağazası', 'uşaq butik'],
+  KZ: ['детская одежда', 'балалар киімі', 'магазин детской одежды', 'балалар киімі дүкені'],
+  UZ: ['bolalar kiyim', 'chaqaloq kiyim', 'bolalar kiyim doʻkoni', 'bolalar kiyimi'],
+  KG: ['детская одежда', 'балдар кийим', 'магазин детской одежды', 'балдар кийим дүкөнү'],
+  TJ: ['детская одежда', 'либоси кӯдакона', 'магазин детской одежды', 'либоси кӯдакон'],
+  TM: ['детская одежда', 'çaga eşikleri', 'çaga egin-eşikleri', 'магазин детской одежды'],
+};
+
 function uniqueInstagramQueries(items, max = 10) {
   const seen = new Set();
   return items
@@ -948,7 +984,7 @@ function uniqueInstagramQueries(items, max = 10) {
       reason: String(item?.reason || item?.why || '').slice(0, 240),
     }))
     .filter((item) => {
-      if (!item.query) return false;
+      if (!isReadableSearchTerm(item.query)) return false;
       const key = `${item.searchType}:${item.query.toLowerCase()}`;
       if (seen.has(key)) return false;
       seen.add(key);
@@ -963,13 +999,12 @@ function buildLocalInstagramSeedQueries(countryPreset = {}) {
   const languageHints = countryPreset.languageHints || {};
   const habitTerms = Array.isArray(languageHints.instagramHabits) ? languageHints.instagramHabits : [];
   const presetQueries = Array.isArray(countryPreset.queries) ? countryPreset.queries : [];
+  const countryTerms = localInstagramDiscoveryTerms[countryPreset.code] || [];
   const localTerms = normalizeStringArray([
-    ...(countryPreset.code === 'TR'
-      ? ['bebek giyim', 'cocuk giyim', 'bebek butik', 'bebek kiyafet', 'bebek giyim butik', 'cocuk giyim butik']
-      : []),
+    ...countryTerms,
     ...habitTerms,
-    ...presetQueries.filter((query) => !/baby clothing store|kids clothing store|children/i.test(String(query))),
-  ], [], 12);
+    ...presetQueries.filter((query) => !/baby clothing store|kids clothing store|children'?s?/i.test(String(query))),
+  ], [], 16).filter(isReadableSearchTerm).slice(0, 12);
   const fallbackTerms = ['baby clothing shop', 'kids clothing shop', 'baby kids boutique', 'children wear shop'];
   const terms = localTerms.length ? localTerms : fallbackTerms;
   const cityTerms = primaryCity ? terms.slice(0, 4).map((term) => `${term} ${primaryCity}`) : [];
