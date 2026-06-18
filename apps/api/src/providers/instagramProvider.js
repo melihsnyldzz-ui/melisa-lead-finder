@@ -221,12 +221,15 @@ function buildInstagramLead({ country, city, query, sourceKeyword }, profile, in
 
 export async function runInstagramSearch({ country, city, query, sourceKeyword, maxResults = 20 }) {
   const task = { country, city, query, sourceKeyword, maxResults };
+  const { token, actorId } = getApifyConfig();
   try {
     const liveLeads = await runApifyInstagramSearch(task);
     if (liveLeads?.length) return liveLeads;
   } catch (err) {
-    console.warn(err.message);
+    if (token && actorId) throw err;
   }
+
+  if (token && actorId) return [];
 
   const count = Math.min(Number(maxResults) || 20, 50);
   return Array.from({ length: count }).map((_, index) => {

@@ -289,6 +289,17 @@ function buildTaskIdentityWhere(input) {
   };
 }
 
+function normalizeSearchTaskInput(input) {
+  return {
+    ...input,
+    city: input.city?.trim() || null,
+    language: input.language?.trim() || null,
+    keywordGroup: input.keywordGroup?.trim() || null,
+    sourceKeyword: input.sourceKeyword?.trim() || null,
+    sourceType: input.sourceType || 'DEMO',
+  };
+}
+
 router.get('/', async (_req, res, next) => {
   try {
     const tasks = await prisma.searchTask.findMany({ orderBy: { createdAt: 'desc' }, take: 100 });
@@ -452,8 +463,8 @@ router.get('/safety', async (_req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    const input = createSearchTaskSchema.parse(req.body);
-    const providerStatus = listProviderStatuses()[input.sourceType || 'DEMO'];
+    const input = normalizeSearchTaskInput(createSearchTaskSchema.parse(req.body));
+    const providerStatus = listProviderStatuses()[input.sourceType];
     if (!providerStatus?.implemented) {
       return res.status(400).json({ error: `Provider is not implemented: ${input.sourceType}` });
     }
@@ -498,6 +509,7 @@ router.post('/:id/run', async (req, res, next) => {
     let detailRequestCount = 0;
     let targetFilteredCount = 0;
     const createdLeads = [];
+    const acceptedLeads = [];
     const searchedResults = [];
     const maxResults = Number(task.maxResults) || 20;
 
@@ -548,16 +560,18 @@ router.post('/:id/run', async (req, res, next) => {
         if (leadResult.created) {
           createdCount += 1;
           createdLeads.push(leadResult.lead);
+          acceptedLeads.push(leadResult.lead);
           searchedResults.push(compactRunLead(leadResult.lead, 'inserted', 'Yeni lead olarak eklendi'));
         } else {
           duplicateCount += 1;
+          acceptedLeads.push(leadResult.lead);
           searchedResults.push(compactRunLead(leadResult.lead, 'duplicate', 'Mevcut lead olarak bulundu'));
         }
       }
     }
 
-    const averageScore = createdLeads.length
-      ? createdLeads.reduce((sum, lead) => sum + lead.leadScore, 0) / createdLeads.length
+    const averageScore = acceptedLeads.length
+      ? acceptedLeads.reduce((sum, lead) => sum + lead.leadScore, 0) / acceptedLeads.length
       : null;
 
     const updated = await prisma.searchTask.update({
@@ -590,7 +604,7 @@ router.post('/:id/run', async (req, res, next) => {
       },
     });
 
-    const bestLeads = createdLeads.sort((a, b) => b.leadScore - a.leadScore).slice(0, 5);
+    const bestLeads = acceptedLeads.sort((a, b) => b.leadScore - a.leadScore).slice(0, 5);
     let aiReport = null;
     try {
       const companyProfile = await getCompanyProfile(prisma);
