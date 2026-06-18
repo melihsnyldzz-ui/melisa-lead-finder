@@ -341,6 +341,11 @@ export default function App() {
     () => balkanCountryPresets.find((preset) => preset.name === instagramForm.country) || selectedPreset,
     [instagramForm.country, selectedPreset],
   );
+  const selectedInstagramMarketProfile = selectedInstagramPreset ? countryMarketProfiles[selectedInstagramPreset.code] : null;
+  const selectedInstagramSearchProfile = useMemo(
+    () => getCountrySearchProfile(selectedInstagramPreset),
+    [selectedInstagramPreset],
+  );
   const automaticSearchPlan = useMemo(
     () => buildAutomaticSearchPlan(taskForm, selectedPreset, aiSearchPlan),
     [taskForm.country, taskForm.city, taskForm.keywordGroup, taskForm.sourceType, selectedPreset, aiSearchPlan],
@@ -522,6 +527,21 @@ export default function App() {
     setInstagramForm(next);
   }
 
+  function applyInstagramPreset(preset) {
+    const searchProfile = getCountrySearchProfile(preset);
+    const city = preset.cities[0];
+    const sourceKeyword = preset.queries.find((query) => !query.includes('baby clothing store') && !query.includes('kids clothing store')) || preset.queries[0] || 'baby clothing boutique';
+    setInstagramAiPlan(null);
+    setInstagramSummary(null);
+    setInstagramForm((current) => ({
+      ...current,
+      country: preset.name,
+      city,
+      sourceKeyword,
+      query: [sourceKeyword, city, searchProfile.instagramHabits?.[0] || 'instagram'].filter(Boolean).join(' '),
+    }));
+  }
+
   async function loadInstagramAiPlan() {
     const preset = selectedInstagramPreset || balkanCountryPresets.find((item) => item.name === instagramForm.country);
     if (!preset) {
@@ -582,6 +602,7 @@ export default function App() {
     setIsRunningInstagramSearch(true);
     try {
       const activePlan = instagramAiPlan || await loadInstagramAiPlan();
+      if (!activePlan) return;
       const queries = getInstagramPlanQueries(activePlan);
       const summaries = [];
       for (const item of queries) {
@@ -1691,7 +1712,7 @@ export default function App() {
             <section className="instagram-hero panel">
               <div>
                 <h2><InstagramIcon size={20} /> Instagram Musteri Bul</h2>
-                <p>Bu sayfa Instagramda satis yapan bebek/cocuk giyim butiklerini, sanal magazalari ve WhatsApp siparis profillerini toplar.</p>
+                <p>Ulkeyi sec, Gemini o ulkenin diline ve Instagram satis aliskanligina gore profil arama kriterlerini hazirlasin.</p>
               </div>
               <div className="instagram-provider-card">
                 <span>Baglanti modu</span>
@@ -1703,39 +1724,36 @@ export default function App() {
             <section className="instagram-grid">
               <form className="panel instagram-search-panel" onSubmit={runInstagramPanelSearch}>
                 <div className="panel-header">
-                  <h2>Sanal Magaza Arama</h2>
-                  <span>{instagramAiPlan?.provider === 'GEMINI' ? 'Gemini kriterleri aktif' : 'Sadece bebek/cocuk giyim'}</span>
+                  <h2>Akilli Instagram Aramasi</h2>
+                  <span>{instagramAiPlan?.provider === 'GEMINI' ? 'Gemini kriterleri aktif' : 'Gemini plan bekliyor'}</span>
                 </div>
-                <label>
-                  Ulke
-                  <input required value={instagramForm.country} onChange={(e) => updateInstagramForm({ country: e.target.value })} />
-                </label>
-                <label>
-                  Sehir / Bolge
-                  <input value={instagramForm.city} onChange={(e) => updateInstagramForm({ city: e.target.value })} />
-                </label>
-                <label>
-                  Arama niyeti
-                  <select value={instagramForm.sourceKeyword} onChange={(e) => updateInstagramForm({ sourceKeyword: e.target.value })}>
-                    <option value="baby kids clothing boutique">baby kids clothing boutique</option>
-                    <option value="kidswear boutique">kidswear boutique</option>
-                    <option value="babywear shop">babywear shop</option>
-                    <option value="kidswear online shop">kidswear online shop</option>
-                    <option value="baby boutique whatsapp">baby boutique whatsapp</option>
-                    <option value="bebek giyim butik">bebek giyim butik</option>
-                    <option value="cocuk giyim butik">cocuk giyim butik</option>
-                    <option value="bebek giyim siparis">bebek giyim siparis</option>
-                    <option value="children wear shop">children wear shop</option>
-                  </select>
-                </label>
-                <label>
-                  Sorgu
-                  <input required value={instagramForm.query} onChange={(e) => setInstagramForm({ ...instagramForm, query: e.target.value })} />
-                </label>
-                <label>
-                  Maksimum profil
-                  <input required min="1" max="50" type="number" value={instagramForm.maxResults} onChange={(e) => setInstagramForm({ ...instagramForm, maxResults: e.target.value })} />
-                </label>
+                <div className="instagram-command-controls">
+                  <label>
+                    Ulke
+                    <select value={selectedInstagramPreset?.code || selectedPresetCode} onChange={(e) => applyInstagramPreset(balkanCountryPresets.find((preset) => preset.code === e.target.value) || balkanCountryPresets[0])}>
+                      {balkanCountryPresets.map((preset) => <option key={preset.code} value={preset.code}>{preset.name}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Sehir
+                    <select value={instagramForm.city} onChange={(e) => {
+                      setInstagramAiPlan(null);
+                      setInstagramSummary(null);
+                      updateInstagramForm({ city: e.target.value });
+                    }}>
+                      {(selectedInstagramPreset?.cities || []).map((city) => <option key={city} value={city}>{city}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Profil limiti
+                    <input required min="1" max="50" type="number" value={instagramForm.maxResults} onChange={(e) => setInstagramForm({ ...instagramForm, maxResults: e.target.value })} />
+                  </label>
+                </div>
+                <div className="country-habit-strip instagram-habit-strip">
+                  <span><strong>Dil</strong>{selectedInstagramSearchProfile.languages.join(', ')}</span>
+                  <span><strong>Arama</strong>{selectedInstagramSearchProfile.instagramHabits.slice(0, 3).join(' / ')}</span>
+                  <span><strong>Pazar</strong>{selectedInstagramMarketProfile?.babyKidsClothingSignal || 'Yerel butik ve online satis profilleri oncelikli.'}</span>
+                </div>
                 {instagramAiPlan && (
                   <div className={`instagram-ai-plan ${instagramAiPlan.provider === 'GEMINI' ? 'gemini-source' : ''}`}>
                     <div className="instagram-ai-plan-header">
@@ -1775,12 +1793,42 @@ export default function App() {
                     {instagramAiPlan.aiError && <div className="field-note warning">{instagramAiPlan.aiError}</div>}
                   </div>
                 )}
+                {!instagramAiPlan && (
+                  <div className="instagram-ai-plan">
+                    <div className="instagram-ai-plan-header">
+                      <strong>Gemini plan hazir degil</strong>
+                      <span>1 tik</span>
+                    </div>
+                    <p>Gemini ile Instagram Bul butonu once kriterleri olusturur, sonra en yuksek oncelikli sorgulari otomatik calistirir.</p>
+                  </div>
+                )}
+                <details className="instagram-advanced-fields">
+                  <summary>Manuel sorgu ayarlari</summary>
+                  <label>
+                    Arama niyeti
+                    <select value={instagramForm.sourceKeyword} onChange={(e) => updateInstagramForm({ sourceKeyword: e.target.value })}>
+                      <option value="baby kids clothing boutique">baby kids clothing boutique</option>
+                      <option value="kidswear boutique">kidswear boutique</option>
+                      <option value="babywear shop">babywear shop</option>
+                      <option value="kidswear online shop">kidswear online shop</option>
+                      <option value="baby boutique whatsapp">baby boutique whatsapp</option>
+                      <option value="bebek giyim butik">bebek giyim butik</option>
+                      <option value="cocuk giyim butik">cocuk giyim butik</option>
+                      <option value="bebek giyim siparis">bebek giyim siparis</option>
+                      <option value="children wear shop">children wear shop</option>
+                    </select>
+                  </label>
+                  <label>
+                    Sorgu
+                    <input required value={instagramForm.query} onChange={(e) => setInstagramForm({ ...instagramForm, query: e.target.value })} />
+                  </label>
+                </details>
                 <div className="instagram-search-actions">
                   <button className="secondary-button" disabled={isPlanningInstagramSearch || isRunningInstagramSearch} onClick={loadInstagramAiPlan} type="button">
                     <Bot size={16} /> {isPlanningInstagramSearch ? 'Gemini planliyor' : 'Gemini Kriter Olustur'}
                   </button>
                   <button disabled={isRunningInstagramSearch} type="submit">
-                    <InstagramIcon size={16} /> {isRunningInstagramSearch ? 'Araniyor' : 'Instagram Profilleri Ara'}
+                    <InstagramIcon size={16} /> {isRunningInstagramSearch ? 'Araniyor' : 'Gemini ile Instagram Bul'}
                   </button>
                   <button className="secondary-button" disabled={isRunningInstagramSearch} onClick={refreshInstagramLeads} type="button">Listeyi Yenile</button>
                 </div>

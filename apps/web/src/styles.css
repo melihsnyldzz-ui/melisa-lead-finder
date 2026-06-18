@@ -145,6 +145,13 @@ p { color: #6e6e73; }
 .instagram-search-panel { display: grid; gap: 8px; border-radius: 10px; }
 .instagram-search-panel label { display: grid; gap: 5px; color: #6e5a4f; font-size: 13px; font-weight: 900; }
 .instagram-search-panel input, .instagram-search-panel select { margin-bottom: 0; }
+.instagram-command-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.instagram-command-controls label { background: #fff; border: 1px solid #eadfd5; border-radius: 14px; padding: 9px; }
+.instagram-command-controls select, .instagram-command-controls input { border-color: transparent; background: #f7f7f7; border-radius: 10px; padding: 9px 10px; }
+.instagram-habit-strip { grid-template-columns: .62fr 1fr 1.38fr; margin: 2px 0 4px; }
+.instagram-advanced-fields { border: 1px solid #eadfd5; border-radius: 12px; padding: 10px; background: #fffaf5; }
+.instagram-advanced-fields summary { cursor: pointer; color: #6e5a4f; font-size: 13px; font-weight: 900; list-style-position: inside; }
+.instagram-advanced-fields label { margin-top: 8px; }
 .instagram-search-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .instagram-ai-plan { display: grid; gap: 8px; background: #fff; border: 1px solid #eadfd5; border-radius: 10px; padding: 10px; }
 .instagram-ai-plan.gemini-source { border-color: #1f8a83; box-shadow: inset 0 0 0 1px rgba(31, 138, 131, .2); }
@@ -287,7 +294,7 @@ dd { margin: 0; overflow-wrap: anywhere; }
   .sidebar nav { display: flex; gap: 8px; overflow: auto; }
   .apple-hero-panel { grid-template-columns: 1fr; }
   .hero-actions { justify-content: flex-start; }
-  .kpi-grid, .workspace-grid, .bottom-grid, .safety-grid, .country-map-layout, .ai-profile-grid, .settings-status-grid, .ai-run-report-columns, .smart-search-controls, .instagram-hero, .instagram-grid, .process-strategy-roles, .country-habit-strip, .ai-run-report-columns.compact { grid-template-columns: 1fr; }
+  .kpi-grid, .workspace-grid, .bottom-grid, .safety-grid, .country-map-layout, .ai-profile-grid, .settings-status-grid, .ai-run-report-columns, .smart-search-controls, .instagram-hero, .instagram-grid, .instagram-command-controls, .process-strategy-roles, .country-habit-strip, .ai-run-report-columns.compact { grid-template-columns: 1fr; }
   .world-map { min-height: 300px; }
   .leaflet-country-label { display: none; }
   .lead-action-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
