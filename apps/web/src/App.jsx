@@ -83,10 +83,64 @@ const instagramSearchKeywords = [
   'çocuk giyim',
 ];
 
-const googlePlacesLanguageCodes = new Set(['en', 'ro', 'bg', 'de', 'tr', 'ru', 'uk', 'pl', 'el', 'sr', 'hr', 'sq']);
+const googlePlacesLanguageCodes = new Set(['en', 'ro', 'bg', 'de', 'tr', 'ru', 'uk', 'pl', 'el', 'sr', 'hr', 'sq', 'bs', 'sl', 'mk', 'ka', 'hy', 'az', 'kk', 'uz', 'be']);
+
+const countrySearchProfiles = {
+  AL: { languageCode: 'sq', languages: ['Albanian', 'English'], searchHabits: ['small boutiques', 'Instagram and WhatsApp contact', 'price-sensitive retail'], instagramHabits: ['boutique', 'dyqan', 'WhatsApp'] },
+  BA: { languageCode: 'bs', languages: ['Bosnian', 'Serbian', 'Croatian'], searchHabits: ['city-center retailers', 'local-language store terms', 'price-focused offers'], instagramHabits: ['prodavnica', 'boutique', 'online shop'] },
+  BG: { languageCode: 'bg', languages: ['Bulgarian', 'English'], searchHabits: ['Bulgarian Cyrillic keywords first', 'Sofia/Plovdiv/Varna split', 'EU quality expectations'], instagramHabits: ['детски дрехи', 'бутик', 'онлайн магазин'] },
+  GR: { languageCode: 'el', languages: ['Greek', 'English'], searchHabits: ['Greek keywords first', 'Athens and Thessaloniki priority', 'seasonal boutique demand'], instagramHabits: ['παιδικά ρούχα', 'boutique', 'eshop'] },
+  RO: { languageCode: 'ro', languages: ['Romanian', 'English'], searchHabits: ['Romanian keywords first', 'website and phone are strong signals', 'large city expansion'], instagramHabits: ['haine copii', 'magazin bebe', 'butic'] },
+  RS: { languageCode: 'sr', languages: ['Serbian', 'English'], searchHabits: ['Serbian keyword variants', 'Belgrade segmenting', 'price and delivery clarity'], instagramHabits: ['dečija odeća', 'prodavnica', 'butik'] },
+  TR: { languageCode: 'tr', languages: ['Turkish'], searchHabits: ['Turkish keywords first', 'district-based Istanbul searches', 'high competition and high volume', 'avoid wholesale-only search terms when looking for retailers'], instagramHabits: ['bebek giyim butik', 'çocuk giyim butik', 'WhatsApp sipariş', 'Instagram mağaza'] },
+  UA: { languageCode: 'uk', languages: ['Ukrainian', 'Russian', 'English'], searchHabits: ['Ukrainian keywords first', 'Kyiv and Lviv controlled pilots', 'logistics and payment notes'], instagramHabits: ['дитячий одяг', 'магазин', 'online shop'] },
+  RU: { languageCode: 'ru', languages: ['Russian'], searchHabits: ['Russian keywords first', 'major cities segmented', 'payment and logistics risk check'], instagramHabits: ['детская одежда', 'магазин', 'WhatsApp'] },
+  MD: { languageCode: 'ro', languages: ['Romanian', 'Russian'], searchHabits: ['Romanian and Russian keywords together', 'Chisinau first', 'small order advantage'], instagramHabits: ['haine copii', 'magazin bebe', 'детская одежда'] },
+  PL: { languageCode: 'pl', languages: ['Polish', 'English'], searchHabits: ['Polish keywords first', 'website quality matters', 'EU label expectations'], instagramHabits: ['odzież dziecięca', 'sklep', 'boutique'] },
+  BY: { languageCode: 'ru', languages: ['Russian', 'Belarusian'], searchHabits: ['Russian keywords first', 'Minsk pilot', 'payment/logistics risk'], instagramHabits: ['детская одежда', 'магазин'] },
+  GE: { languageCode: 'ka', languages: ['Georgian', 'English', 'Russian'], searchHabits: ['Georgian and English searches together', 'Tbilisi first', 'Instagram-active shops are strong'], instagramHabits: ['ბავშვის ტანსაცმელი', 'kidswear', 'boutique'] },
+  AM: { languageCode: 'hy', languages: ['Armenian', 'Russian', 'English'], searchHabits: ['Armenian keywords first', 'Yerevan first', 'low MOQ advantage'], instagramHabits: ['մանկական հագուստ', 'խանութ', 'boutique'] },
+  AZ: { languageCode: 'az', languages: ['Azerbaijani', 'Turkish', 'Russian'], searchHabits: ['Azerbaijani and Turkish keywords together', 'Baku priority', 'Turkish outreach advantage'], instagramHabits: ['uşaq geyim', 'körpə geyim', 'butik'] },
+  KZ: { languageCode: 'ru', languages: ['Russian', 'Kazakh'], searchHabits: ['Russian and Kazakh keywords together', 'Almaty/Astana as separate pilots', 'logistics cost matters'], instagramHabits: ['детская одежда', 'балалар киімі', 'shop'] },
+  UZ: { languageCode: 'uz', languages: ['Uzbek', 'Russian'], searchHabits: ['Uzbek and Russian keywords together', 'Tashkent first', 'price-sensitive high volume'], instagramHabits: ['bolalar kiyim', 'chaqaloq kiyim', 'shop'] },
+  KG: { languageCode: 'ru', languages: ['Russian', 'Kyrgyz'], searchHabits: ['Russian keywords usually start better', 'Bishkek first', 'low MOQ and WhatsApp'], instagramHabits: ['детская одежда', 'балдар кийим', 'WhatsApp'] },
+  TJ: { languageCode: 'ru', languages: ['Russian', 'Tajik'], searchHabits: ['Russian and Tajik keywords', 'Dushanbe first', 'manual quality control'], instagramHabits: ['детская одежда', 'либоси кӯдакона'] },
+  TM: { languageCode: 'ru', languages: ['Russian', 'Turkmen'], searchHabits: ['Russian and Turkmen keywords', 'Ashgabat first', 'relationship-based market'], instagramHabits: ['детская одежда', 'çaga eşikleri'] },
+};
 
 function getGooglePlacesLanguageCode(language) {
   return googlePlacesLanguageCodes.has(language) ? language : 'en';
+}
+
+function getCountrySearchProfile(preset) {
+  if (!preset) return countrySearchProfiles.RO;
+  if (countrySearchProfiles[preset.code]) return countrySearchProfiles[preset.code];
+  if (preset.code?.startsWith('RU-')) return {
+    ...countrySearchProfiles.RU,
+    searchHabits: [...countrySearchProfiles.RU.searchHabits, 'regional Caucasus/Volga city focus', 'use Russian plus regional wording when available'],
+  };
+  return {
+    languageCode: 'en',
+    languages: ['English', 'local language'],
+    searchHabits: ['local-language keywords first', 'start from largest city', 'prefer phone/website/Instagram signals'],
+    instagramHabits: ['boutique', 'shop', 'WhatsApp', 'local baby/kids clothing words'],
+  };
+}
+
+function buildCountryPresetPayload(preset) {
+  const searchProfile = getCountrySearchProfile(preset);
+  return {
+    code: preset.code,
+    name: preset.name,
+    cities: preset.cities,
+    queries: preset.queries,
+    languageHints: {
+      googleLanguageCode: searchProfile.languageCode,
+      languages: searchProfile.languages,
+      searchHabits: searchProfile.searchHabits,
+      instagramHabits: searchProfile.instagramHabits,
+    },
+  };
 }
 
 const pilotDefaults = {
@@ -279,6 +333,10 @@ export default function App() {
     [selectedPresetCode],
   );
   const selectedMarketProfile = selectedPreset ? countryMarketProfiles[selectedPreset.code] : null;
+  const selectedSearchProfile = useMemo(
+    () => getCountrySearchProfile(selectedPreset),
+    [selectedPreset],
+  );
   const selectedInstagramPreset = useMemo(
     () => balkanCountryPresets.find((preset) => preset.name === instagramForm.country) || selectedPreset,
     [instagramForm.country, selectedPreset],
@@ -476,12 +534,7 @@ export default function App() {
     setIsPlanningInstagramSearch(true);
     try {
       const plan = await apiPost('/ai/instagram-search-plan', {
-        countryPreset: {
-          code: preset.code,
-          name: preset.name,
-          cities: preset.cities,
-          queries: preset.queries,
-        },
+        countryPreset: buildCountryPresetPayload(preset),
         marketProfile: countryMarketProfiles[preset.code] || null,
       });
       setInstagramAiPlan(plan);
@@ -586,12 +639,7 @@ export default function App() {
     setAiSearchPlan(null);
     try {
       const plan = await apiPost('/ai/search-plan', {
-        countryPreset: {
-          code: preset.code,
-          name: preset.name,
-          cities: preset.cities,
-          queries: preset.queries,
-        },
+        countryPreset: buildCountryPresetPayload(preset),
         marketProfile: countryMarketProfiles[preset.code] || null,
       });
       setAiSearchPlan(plan);
@@ -625,12 +673,7 @@ export default function App() {
     setIsLoadingProcessStrategy(true);
     try {
       const strategy = await apiPost('/ai/process-strategy', {
-        countryPreset: {
-          code: selectedPreset.code,
-          name: selectedPreset.name,
-          cities: selectedPreset.cities,
-          queries: selectedPreset.queries,
-        },
+        countryPreset: buildCountryPresetPayload(selectedPreset),
         marketProfile: selectedMarketProfile || null,
       });
       setAiProcessStrategy(strategy);
@@ -647,13 +690,16 @@ export default function App() {
   function applyCountryPreset(preset) {
     const city = preset.cities[0];
     const sourceKeyword = preset.queries[0];
+    const searchProfile = getCountrySearchProfile(preset);
     setSelectedPresetCode(preset.code);
     setAiSearchPlan(null);
+    setAiProcessStrategy(null);
     setTaskForm({
       ...taskForm,
       name: `${preset.name} ${city} ${keywordGroups[taskForm.keywordGroup] || taskForm.keywordGroup}`,
       country: preset.name,
       city,
+      language: getGooglePlacesLanguageCode(searchProfile.languageCode),
       sourceKeyword,
       query: `${sourceKeyword} ${city}`,
       sourceType: providers.GOOGLE_PLACES?.configured ? 'GOOGLE_PLACES' : 'DEMO',
@@ -666,7 +712,7 @@ export default function App() {
   }
 
   function setPresetCity(city) {
-    const sourceKeyword = aiSearchPlan?.keywords?.[0] || aiSearchPlan?.localKeywords?.[0] || taskForm.sourceKeyword || selectedPreset?.queries[0] || 'baby clothing store';
+    const sourceKeyword = aiSearchPlan?.localKeywords?.[0] || aiSearchPlan?.keywords?.[0] || selectedPreset?.queries?.[2] || taskForm.sourceKeyword || selectedPreset?.queries[0] || 'baby clothing store';
     updateTaskForm({
       city,
       query: `${sourceKeyword} ${city}`,
@@ -1064,6 +1110,11 @@ export default function App() {
             <div className="panel-header">
               <h2><Bot size={18} /> Gemini Surec Stratejisi</h2>
               <span>{selectedPreset?.name || taskForm.country} - {aiProcessStrategy.provider === 'GEMINI' ? 'Canli Gemini' : 'Yerel analiz'} - Guven %{Math.round((aiProcessStrategy.confidence || 0) * 100)}</span>
+            </div>
+            <div className="country-habit-strip">
+              <span><strong>Dil</strong>{selectedSearchProfile.languages.join(', ')}</span>
+              <span><strong>Google</strong>{selectedSearchProfile.searchHabits.slice(0, 3).join(' / ')}</span>
+              <span><strong>Instagram</strong>{selectedSearchProfile.instagramHabits.slice(0, 3).join(' / ')}</span>
             </div>
             <p>{aiProcessStrategy.summary}</p>
             {aiProcessStrategy.aiError && <p className="field-note warning">{aiProcessStrategy.aiError}</p>}

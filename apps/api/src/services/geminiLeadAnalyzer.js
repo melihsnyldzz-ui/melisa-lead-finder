@@ -504,12 +504,15 @@ Find physical stores, boutiques, retailers, and children's wear shops that could
 
 Rules:
 - Return a practical Turkish plan.
+- First interpret the selected country's market habits, languages, and buyer behavior from countryPreset.languageHints and marketProfile.
 - Choose the strongest first city for baby/kids clothing retail discovery.
 - Recommend 3-6 cities from the provided country city list when possible.
 - Keywords must target only baby clothing stores, kids clothing stores, children's boutiques, children's wear retailers, baby boutiques, and kidswear shops.
 - Prefer retailer/store/boutique/shop terms over broad product-only terms.
 - Each keyword must include both clothing intent and baby/kids audience intent, unless it is a strong local-language equivalent.
-- Include English keywords and local-language keywords when useful.
+- Local-language keywords are mandatory when languageHints or countryPreset.queries provide them. English keywords are secondary support, not the default for non-English markets.
+- Shape keyword order around country habits: local language first, then transliteration/English variants, then city-specific refinements.
+- For Turkey, do not propose wholesale-only Google queries when the goal is to find retailers that may buy wholesale.
 - Do not suggest schools, clinics, playgrounds, toy-only shops, supermarkets, adult fashion, pharmacies, malls, or broad baby product stores without clothing proof.
 - If a query is too broad, make it more specific with boutique, shop, retailer, kidswear, babywear, or local-language clothing words.
 - If coverage shows a city was already searched successfully, lower its priority unless it still deserves a re-check.
@@ -557,8 +560,11 @@ Create a detailed Instagram discovery plan that finds virtual stores, baby cloth
 
 Rules:
 - Return Turkish explanations, but search queries can be English, Turkish, and local language.
+- First interpret the selected country's Instagram selling habits, common languages, and buyer behavior from countryPreset.languageHints and marketProfile.
 - Focus on Instagram profiles that look like real businesses with product posts, catalog/order language, WhatsApp, website, address, or store/boutique wording.
 - Include local language keywords, transliterated variants, English variants, boutique terms, online shop terms, WhatsApp/order terms, and kidswear/babywear variants.
+- Query order must match the country's habits: local Instagram store terms first, then English/international terms.
+- Include city-specific Instagram queries for the selected country cities.
 - Prefer searchType "user" because the current actor inserts profile leads; use hashtag/place only as secondary discovery ideas.
 - Do not target toy-only pages, schools, clinics, playgrounds, mother blogs, influencers, personal baby accounts, adult fashion only, or unrelated marketplaces.
 - Make queries broad enough to find sellers, but strict enough that every query implies baby/kids clothing sales.
@@ -620,6 +626,8 @@ Rules:
 - Be practical and operational, not theoretical.
 - Keep every recommendation focused on the selected country. Do not recommend another country unless the selected country has no usable data at all.
 - If you mention example cities, they must come from the selected country city list or the selected country market context.
+- Start by identifying the selected country's buying/search habits, main languages, and best channel split.
+- Shape recommendations around those languages and habits, not generic English keywords.
 - Focus on only two channels: Google for physical baby/kids clothing stores, Instagram for online sellers and boutique profiles.
 - Use liked/disliked lead feedback as learning data.
 - Explain how to avoid wasting Gemini, Google, and Apify quota.
@@ -1036,12 +1044,16 @@ export function buildFallbackProcessStrategy({ countryPreset = {}, stats = {}, g
   const instagramRuns = instagramCoverage.reduce((sum, item) => sum + (item.totalRuns || 0), 0);
   const countryName = countryPreset?.name || 'Secili ulke';
   const firstCity = countryPreset?.cities?.[0] || 'ilk uygun sehir';
+  const languageHints = countryPreset?.languageHints || {};
+  const languages = Array.isArray(languageHints.languages) ? languageHints.languages.join(', ') : 'yerel dil';
+  const habits = Array.isArray(languageHints.searchHabits) ? languageHints.searchHabits.slice(0, 3).join(', ') : 'yerel arama aliskanliklari';
+  const instagramHabits = Array.isArray(languageHints.instagramHabits) ? languageHints.instagramHabits.slice(0, 3).join(', ') : 'Instagram shop sinyalleri';
   return clampProcessStrategy({
     provider: 'LOCAL_ANALYSIS',
     model: null,
-    summary: `${countryName} icin Gemini karar motoru olarak kullanilmali: Google fiziksel magazalari, Instagram sanal satis profillerini bulur; begeni verisi bu ulkedeki sonraki aramalari egitir. Toplam lead ${stats.total || 0}, Google kosu ${googleRuns}, Instagram kosu ${instagramRuns}.`,
-    googleRole: `${countryName} icin Gemini en iyi sehirleri, yerel dilde bebek/cocuk giyim keywordlerini ve tekrar edilmeyecek arama siralamasini belirlemeli.`,
-    instagramRole: `${countryName} icin Gemini Instagramda shop, boutique, WhatsApp, order, catalog ve kidswear/babywear sinyali tasiyan profil sorgularini uretmeli.`,
+    summary: `${countryName} icin Gemini karar motoru olarak kullanilmali: ana diller ${languages}; pazar aliskanliklari ${habits}. Google fiziksel magazalari, Instagram sanal satis profillerini bulur; begeni verisi bu ulkedeki sonraki aramalari egitir. Toplam lead ${stats.total || 0}, Google kosu ${googleRuns}, Instagram kosu ${instagramRuns}.`,
+    googleRole: `${countryName} icin Gemini en iyi sehirleri, ${languages} dilindeki bebek/cocuk giyim keywordlerini ve tekrar edilmeyecek arama siralamasini belirlemeli.`,
+    instagramRole: `${countryName} icin Gemini Instagramda ${instagramHabits} sinyali tasiyan profil sorgularini uretmeli.`,
     learningLoop: [
       'Her aramadan sonra Gemini bulunan/eklenen/tekrar/ortalama skor verisini raporlar.',
       'Begenilen leadlerin sehir ve keywordleri sonraki planlarda yukari alinir.',
@@ -1050,7 +1062,7 @@ export function buildFallbackProcessStrategy({ countryPreset = {}, stats = {}, g
     ],
     nextActions: [
       `${countryName} icin once Google Magaza Bul tarafinda AI Plani Yenile.`,
-      `${firstCity} sehrinde 20-30 sonuc ile kalite testi yap.`,
+      `${firstCity} sehrinde yerel dil keywordleriyle 20-30 sonuc kalite testi yap.`,
       'Sicak leadleri begen/begenme butonlariyla isaretle.',
       `${countryName} icin Instagram Musteri Bul panelinde Gemini Kriter Olustur.`,
       'Arama raporundaki sonraki sehir ve keyword onerilerini uygula.',

@@ -77,7 +77,7 @@ function getRunLimit() {
   return Number.isFinite(configured) && configured > 0 ? Math.min(configured, 50) : 50;
 }
 
-const GOOGLE_PLACES_LANGUAGE_CODES = new Set(['en', 'ro', 'bg', 'de', 'tr', 'ru', 'uk', 'pl', 'el', 'sr', 'hr', 'sq']);
+const GOOGLE_PLACES_LANGUAGE_CODES = new Set(['en', 'ro', 'bg', 'de', 'tr', 'ru', 'uk', 'pl', 'el', 'sr', 'hr', 'sq', 'bs', 'sl', 'mk', 'ka', 'hy', 'az', 'kk', 'uz', 'be']);
 
 function getGooglePlacesLanguageCode(language) {
   return GOOGLE_PLACES_LANGUAGE_CODES.has(language) ? language : 'en';
