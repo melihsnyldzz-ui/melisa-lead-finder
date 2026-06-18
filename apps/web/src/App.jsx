@@ -95,6 +95,34 @@ const instagramDefaults = {
   maxResults: 20,
 };
 
+const runSummaryCacheKey = 'melisaLeadFinder.runSummaries.v1';
+
+function makeRunCacheKey(run) {
+  return [run.country, run.city || '', run.sourceType, run.query].join('|').toLowerCase();
+}
+
+function readRunSummaryCache() {
+  try {
+    return JSON.parse(window.localStorage.getItem(runSummaryCacheKey) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function writeRunSummaryCache(summary) {
+  try {
+    const cache = readRunSummaryCache();
+    cache[makeRunCacheKey(summary)] = {
+      ...summary,
+      cachedAt: new Date().toISOString(),
+    };
+    const entries = Object.entries(cache).slice(-40);
+    window.localStorage.setItem(runSummaryCacheKey, JSON.stringify(Object.fromEntries(entries)));
+  } catch {
+    // Local storage is optional; history still works without it.
+  }
+}
+
 function getErrorMessage(error) {
   try {
     const parsed = JSON.parse(error.message);
@@ -493,7 +521,9 @@ export default function App() {
           maxResults: Number(activePlan?.maxResultsPerQuery || instagramForm.maxResults),
           allowDuplicate: true,
         });
-        summaries.push(await apiPost(`/search-tasks/${created.id}/run`, {}));
+        const runSummary = await apiPost(`/search-tasks/${created.id}/run`, {});
+        writeRunSummaryCache(runSummary);
+        summaries.push(runSummary);
       }
       const summary = summaries.reduce((acc, item) => ({
         foundCount: acc.foundCount + (item.foundCount || 0),
@@ -629,6 +659,7 @@ export default function App() {
     try {
       const task = await apiPost(`/search-tasks/${id}/run`, {});
       setLastRunSummary(task);
+      writeRunSummaryCache(task);
       await refresh();
       setMessage(`${task.foundCount || 0} sonuç bulundu, ${task.createdCount || 0} yeni lead eklendi, ${task.duplicateCount || 0} tekrar atlandı`);
     } catch (err) {
@@ -834,6 +865,72 @@ export default function App() {
     if (lead) setSelectedLead(lead);
   }
 
+  function compactLeadForRunView(lead, status = 'found') {
+    return {
+      id: lead.id,
+      googlePlaceId: lead.googlePlaceId,
+      companyName: lead.companyName,
+      country: lead.country,
+      city: lead.city,
+      phone: lead.internationalPhoneNumber || lead.phone,
+      website: lead.website,
+      instagram: lead.instagram,
+      googleMapsUrl: lead.googleMapsUrl,
+      rating: lead.rating,
+      userRatingsTotal: lead.userRatingsTotal,
+      leadScore: lead.leadScore,
+      businessStatus: lead.businessStatus,
+      sourceQuery: lead.sourceQuery,
+      sourceKeyword: lead.sourceKeyword,
+      status,
+    };
+  }
+
+  async function showRunSummary(run) {
+    setError(null);
+    setMessage(null);
+    try {
+      const cachedSummary = readRunSummaryCache()[makeRunCacheKey(run)];
+      if (cachedSummary) {
+        setLastRunSummary(cachedSummary);
+        setFilters((current) => ({
+          ...current,
+          country: run.country,
+          city: run.city || '',
+        }));
+        setMessage(`${run.country} ${run.city || ''} son aramasi tam ozetiyle acildi`);
+        return;
+      }
+
+      const params = new URLSearchParams({
+        country: run.country,
+        sourceType: run.sourceType,
+        ...(run.city ? { city: run.city } : {}),
+      }).toString();
+      const runLeads = await apiGet(`/leads?${params}`);
+      const relatedLeads = runLeads
+        .filter((lead) => lead.sourceQuery === run.query || lead.sourceKeyword === run.sourceKeyword)
+        .sort((a, b) => b.leadScore - a.leadScore);
+      setLastRunSummary({
+        ...run,
+        createdCount: run.createdCount || 0,
+        searchedResults: relatedLeads.slice(0, 100).map((lead) => compactLeadForRunView(lead)),
+        bestLeads: relatedLeads.slice(0, 5),
+        historyNote: relatedLeads.length
+          ? null
+          : 'Bu eski aramanin detay listesi kayitli degil; bu tarihten sonraki aramalar tam ozetiyle saklanacak.',
+      });
+      setFilters((current) => ({
+        ...current,
+        country: run.country,
+        city: run.city || '',
+      }));
+      setMessage(`${run.country} ${run.city || ''} son aramasi calisma ozetine acildi`);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
   async function showTaskSummary(task) {
     setError(null);
     setMessage(null);
@@ -843,24 +940,7 @@ export default function App() {
         ...(task.city ? { city: task.city } : {}),
       }).toString();
       const taskLeads = await apiGet(`/leads?${params}`);
-      const searchedResults = taskLeads.slice(0, 100).map((lead) => ({
-        id: lead.id,
-        googlePlaceId: lead.googlePlaceId,
-        companyName: lead.companyName,
-        country: lead.country,
-        city: lead.city,
-        phone: lead.internationalPhoneNumber || lead.phone,
-        website: lead.website,
-        instagram: lead.instagram,
-        googleMapsUrl: lead.googleMapsUrl,
-        rating: lead.rating,
-        userRatingsTotal: lead.userRatingsTotal,
-        leadScore: lead.leadScore,
-        businessStatus: lead.businessStatus,
-        sourceQuery: lead.sourceQuery,
-        sourceKeyword: lead.sourceKeyword,
-        status: 'found',
-      }));
+      const searchedResults = taskLeads.slice(0, 100).map((lead) => compactLeadForRunView(lead));
       setLastRunSummary({
         ...task,
         createdCount: task.insertedCount || 0,
@@ -1151,6 +1231,7 @@ export default function App() {
                   <strong>En iyi leadler</strong>
                   {(lastRunSummary.bestLeads || []).map((lead) => <span key={lead.id}>{lead.leadScore} - {lead.companyName}</span>)}
                 </div>
+                {lastRunSummary.historyNote && <p className="field-note warning">{lastRunSummary.historyNote}</p>}
                 {(lastRunSummary.searchedResults || []).length > 0 && (
                   <div className="searched-results-box">
                     <div className="searched-results-header">
@@ -1201,6 +1282,31 @@ export default function App() {
             ) : (
               <div className="empty-state">Sonuç sayısı, tekrarlar, ortalama skor ve en iyi leadleri görmek için Google araması çalıştır.</div>
             )}
+            <div className="recent-runs-box">
+              <div className="searched-results-header">
+                <strong>Son Aramalar</strong>
+                <span>{runHistory.length} kosu</span>
+              </div>
+              <div className="recent-runs-list">
+                {isLoading && runHistory.length === 0 && <div className="empty-state">Son aramalar yukleniyor.</div>}
+                {!isLoading && runHistory.length === 0 && <div className="empty-state">Henuz arama gecmisi yok.</div>}
+                {runHistory.slice(0, 6).map((run) => (
+                  <button
+                    className={`recent-run-item status-${run.status.toLowerCase()}`}
+                    key={run.id}
+                    onClick={() => showRunSummary(run)}
+                    type="button"
+                  >
+                    <span>
+                      <strong>{run.country} {run.city || ''}</strong>
+                      <small>{sourceTypeLabels[run.sourceType] || run.sourceType} - {run.query}</small>
+                    </span>
+                    <em>{run.foundCount} bulundu / {run.createdCount || 0} eklendi</em>
+                    <small>{new Date(run.ranAt).toLocaleString('tr-TR')}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
           </div>
         </section>
@@ -1426,6 +1532,7 @@ export default function App() {
                   {taskStatusLabels[run.status] || run.status} - bulunan {run.foundCount} / eklenen {run.createdCount || 0} / tekrar {run.duplicateCount || 0}
                 </span>
                 <small>{new Date(run.ranAt).toLocaleString('tr-TR')}</small>
+                <button className="secondary-button" onClick={() => showRunSummary(run)} type="button">Ac</button>
               </div>
             ))}
           </div>
