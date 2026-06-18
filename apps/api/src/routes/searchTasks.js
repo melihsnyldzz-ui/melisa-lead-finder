@@ -539,7 +539,7 @@ router.post('/:id/run', async (req, res, next) => {
       searchedResults.push(...result.searchedResults);
 
       for (const leadInput of result.leads) {
-        if (task.sourceType === 'GOOGLE_PLACES' && !isBabyKidsClothingLead(leadInput)) {
+        if (['GOOGLE_PLACES', 'INSTAGRAM'].includes(task.sourceType) && !isBabyKidsClothingLead(leadInput)) {
           targetFilteredCount += 1;
           searchedResults.push(compactRunLead(leadInput, 'filtered_out', 'Hedef bebek/cocuk giyim disi gorundu'));
           continue;

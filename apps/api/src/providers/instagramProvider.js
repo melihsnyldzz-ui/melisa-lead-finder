@@ -68,29 +68,61 @@ function pickFirst(item, keys) {
   return null;
 }
 
+function pickNested(item, paths) {
+  for (const path of paths) {
+    const value = path.split('.').reduce((current, key) => current?.[key], item);
+    if (value !== undefined && value !== null && String(value).trim()) return value;
+  }
+  return null;
+}
+
 function normalizeInstagramUrl(value, handle) {
   if (value && String(value).startsWith('http')) return String(value);
   const cleanHandle = String(handle || value || '').replace(/^@/, '').trim();
   return cleanHandle ? `https://www.instagram.com/${cleanHandle}/` : null;
 }
 
+function buildInstagramCategoryGuess(item, bio) {
+  return [
+    item.category,
+    item.businessCategoryName,
+    item.categoryName,
+    item.businessCategory,
+    item.name,
+    item.fullName,
+    item.username,
+    bio,
+  ].filter(Boolean).join(' ').slice(0, 250);
+}
+
 function buildLeadFromApifyItem(task, item, index) {
-  const handle = pickFirst(item, ['username', 'userName', 'handle', 'account', 'profileName', 'ownerUsername']);
-  const rawUrl = pickFirst(item, ['url', 'profileUrl', 'instagramUrl', 'inputUrl']);
+  const handle = pickFirst(item, ['username', 'userName', 'handle', 'account', 'profileName', 'ownerUsername'])
+    || pickNested(item, ['ig_business.profile.username', 'profile.username']);
+  const rawUrl = pickFirst(item, ['url', 'profileUrl', 'instagramUrl', 'inputUrl'])
+    || pickNested(item, ['ig_business.profile.url', 'ig_business.profile.profileUrl', 'profile.url']);
   if (item?.error && !handle && !rawUrl) return null;
-  const displayName = pickFirst(item, ['fullName', 'name', 'displayName', 'title']) || handle || `Instagram profile ${index + 1}`;
+  const displayName = pickFirst(item, ['fullName', 'name', 'displayName', 'title'])
+    || pickNested(item, ['ig_business.profile.fullName', 'profile.fullName'])
+    || handle
+    || `Instagram profile ${index + 1}`;
   const instagram = normalizeInstagramUrl(rawUrl, handle);
   const followers = Number(pickFirst(item, ['followersCount', 'followers', 'followerCount'])) || 0;
-  const bio = pickFirst(item, ['biography', 'bio', 'description']) || '';
+  const bio = pickFirst(item, ['biography', 'bio', 'description'])
+    || pickNested(item, ['ig_business.profile.biography', 'profile.biography'])
+    || '';
   const website = pickFirst(item, ['externalUrl', 'website', 'websiteUrl']);
   const phone = pickFirst(item, ['phoneNumber', 'phone', 'whatsapp']);
   const email = pickFirst(item, ['email', 'publicEmail']);
+  const address = pickFirst(item, ['location_address', 'address', 'streetAddress']);
+  const city = pickFirst(item, ['location_city', 'city']) || task.city;
+  const categoryGuess = buildInstagramCategoryGuess(item, bio);
 
   return {
     companyName: displayName,
     displayName: handle ? `@${String(handle).replace(/^@/, '')}` : displayName,
     country: task.country,
-    city: task.city,
+    city,
+    address,
     phone,
     internationalPhoneNumber: phone,
     whatsapp: phone,
@@ -100,10 +132,10 @@ function buildLeadFromApifyItem(task, item, index) {
     sourceType: 'INSTAGRAM',
     sourceQuery: task.query,
     sourceKeyword: task.sourceKeyword,
-    sourceCity: task.city,
+    sourceCity: city,
     sourceCountry: task.country,
-    categoryGuess: [item.category, item.businessCategoryName, bio, task.sourceKeyword].filter(Boolean).join(' ').slice(0, 250),
-    types: ['instagram_profile', 'online_store'],
+    categoryGuess,
+    types: ['instagram_profile', item.searchSource === 'google' ? 'instagram_place' : 'online_store'].filter(Boolean),
     notes: item?.error
       ? `Apify Instagram actor tarafindan kismi profil sonucu bulundu: ${item.errorDescription || item.error}`
       : 'Apify Instagram actor tarafindan bulundu.',

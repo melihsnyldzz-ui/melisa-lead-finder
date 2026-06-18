@@ -428,17 +428,14 @@ Rules:
 - Do not write markdown, code fences, explanations, or any text before/after JSON.
 - Use exactly this shape:
 {
-  "summary": "short Turkish summary",
-  "primaryCity": "one city from the provided city list",
-  "recommendedCities": [
-    { "city": "city name", "priority": "high", "reason": "short Turkish reason" }
-  ],
-  "keywords": ["baby clothing store", "kids clothing store"],
-  "localKeywords": ["local language baby/kids clothing keyword"],
-  "searchStrategy": ["short Turkish step"],
-  "exclusions": ["schools", "clinics", "toy-only shops"],
-  "maxResults": 40,
-  "confidence": 0.8
+  "executiveSummary": "short Turkish summary",
+  "leadQuality": "strong",
+  "marketSignal": "what this run indicates about the market",
+  "searchWeaknesses": ["weakness observed in this run"],
+  "nextSearchIdeas": ["next practical Instagram or Google search idea"],
+  "keywordImprovements": ["better keyword"],
+  "recommendedCities": ["city name"],
+  "actionPlan": ["short Turkish action step"]
 }
 `;
 }

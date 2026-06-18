@@ -147,6 +147,43 @@ const UNRELATED_TERMS = [
   'hypermarket',
 ];
 
+AUDIENCE_TERMS.push(
+  'çocuk',
+  'детск',
+  'дети',
+  'ребен',
+  'малыш',
+  'бебеш',
+  'дитяч',
+  'дитин',
+  'copil',
+  'dzieci',
+);
+
+CLOTHING_TERMS.push(
+  'kıyafet',
+  'îmbrăcăminte',
+  'odzież',
+  'одежд',
+  'дрех',
+  'одяг',
+  'облек',
+  'ubran',
+);
+
+STRONG_CLOTHING_PHRASES.push(
+  'çocuk giyim',
+  'sklep z odzieżą dziecięcą',
+  'детская одежда',
+  'детской одежды',
+  'магазин детской одежды',
+  'детски дрехи',
+  'бебешки дрехи',
+  'дитячий одяг',
+  'одежда для детей',
+  'одежда для малышей',
+);
+
 const TARGET_CONTEXT_TERMS = [
   ...AUDIENCE_TERMS,
   ...CLOTHING_TERMS,

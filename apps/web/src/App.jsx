@@ -456,9 +456,9 @@ export default function App() {
     }
   }
 
-  function getInstagramPlanQueries() {
-    const plannedQueries = instagramAiPlan?.searchQueries?.length
-      ? instagramAiPlan.searchQueries
+  function getInstagramPlanQueries(plan = instagramAiPlan) {
+    const plannedQueries = plan?.searchQueries?.length
+      ? plan.searchQueries
       : [{
         query: instagramForm.query,
         searchType: 'user',
@@ -466,7 +466,7 @@ export default function App() {
         reason: 'Formdaki manuel Instagram sorgusu.',
       }];
     return plannedQueries
-      .filter((item) => item.query && (item.searchType || 'user') === 'user')
+      .filter((item) => item.query && ['user', 'place'].includes(item.searchType || 'user'))
       .slice(0, 6);
   }
 
@@ -477,7 +477,8 @@ export default function App() {
     setInstagramSummary(null);
     setIsRunningInstagramSearch(true);
     try {
-      const queries = getInstagramPlanQueries();
+      const activePlan = instagramAiPlan || await loadInstagramAiPlan();
+      const queries = getInstagramPlanQueries(activePlan);
       const summaries = [];
       for (const item of queries) {
         const created = await apiPost('/search-tasks', {
@@ -489,7 +490,7 @@ export default function App() {
           sourceKeyword: `${item.searchType || 'user'}: ${item.query}`,
           query: item.query,
           sourceType: 'INSTAGRAM',
-          maxResults: Number(instagramAiPlan?.maxResultsPerQuery || instagramForm.maxResults),
+          maxResults: Number(activePlan?.maxResultsPerQuery || instagramForm.maxResults),
           allowDuplicate: true,
         });
         summaries.push(await apiPost(`/search-tasks/${created.id}/run`, {}));
