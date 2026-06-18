@@ -4,8 +4,10 @@ import { prisma } from '../db.js';
 import { getCompanyProfile } from '../services/companyProfileService.js';
 import {
   buildFallbackInstagramSearchPlan,
+  buildFallbackProcessStrategy,
   buildFallbackSearchPlan,
   createInstagramSearchPlanWithGemini,
+  createProcessStrategyWithGemini,
   createSearchPlanWithGemini,
   getFriendlyGeminiError,
   testGeminiConnection,
@@ -108,7 +110,7 @@ function summarizeRunPerformance(coverage) {
 async function summarizeLeadFeedback(country) {
   const feedbackLeads = await prisma.lead.findMany({
     where: {
-      country: { equals: country, mode: 'insensitive' },
+      ...(country ? { country: { equals: country, mode: 'insensitive' } } : {}),
       userFeedback: { in: ['LIKED', 'DISLIKED'] },
     },
     orderBy: { userFeedbackAt: 'desc' },
@@ -196,6 +198,86 @@ router.post('/gemini/test', async (_req, res) => {
       ok: false,
       error: getFriendlyGeminiError(err),
     });
+  }
+});
+
+function compactRunForStrategy(run) {
+  return {
+    country: run.country,
+    city: run.city,
+    sourceType: run.sourceType,
+    query: run.query,
+    sourceKeyword: run.sourceKeyword,
+    status: run.status,
+    foundCount: run.foundCount,
+    createdCount: run.createdCount,
+    duplicateCount: run.duplicateCount,
+    errorCount: run.errorCount,
+    averageScore: run.averageScore,
+    ranAt: run.ranAt,
+  };
+}
+
+router.post('/process-strategy', async (_req, res, next) => {
+  try {
+    const companyProfile = await getCompanyProfile(prisma);
+    const [
+      totalLeads,
+      hotLeads,
+      reviewLeads,
+      likedLeads,
+      dislikedLeads,
+      googleCoverage,
+      instagramCoverage,
+      recentRuns,
+    ] = await Promise.all([
+      prisma.lead.count(),
+      prisma.lead.count({ where: { status: 'HOT' } }),
+      prisma.lead.count({ where: { status: 'REVIEW' } }),
+      prisma.lead.count({ where: { userFeedback: 'LIKED' } }),
+      prisma.lead.count({ where: { userFeedback: 'DISLIKED' } }),
+      prisma.searchRunHistory.findMany({
+        where: { sourceType: 'GOOGLE_PLACES' },
+        orderBy: { ranAt: 'desc' },
+        take: 120,
+      }),
+      prisma.searchRunHistory.findMany({
+        where: { sourceType: 'INSTAGRAM' },
+        orderBy: { ranAt: 'desc' },
+        take: 120,
+      }),
+      prisma.searchRunHistory.findMany({
+        orderBy: { ranAt: 'desc' },
+        take: 20,
+      }),
+    ]);
+
+    const payload = {
+      companyProfile,
+      stats: {
+        total: totalLeads,
+        hot: hotLeads,
+        review: reviewLeads,
+        liked: likedLeads,
+        disliked: dislikedLeads,
+      },
+      googleCoverage: summarizeRunPerformance(googleCoverage),
+      instagramCoverage: summarizeRunPerformance(instagramCoverage),
+      feedback: await summarizeLeadFeedback(),
+      recentRuns: recentRuns.map(compactRunForStrategy),
+    };
+
+    try {
+      const strategy = await createProcessStrategyWithGemini(payload);
+      res.json(strategy);
+    } catch (strategyError) {
+      res.json({
+        ...buildFallbackProcessStrategy(payload),
+        aiError: getFriendlyGeminiError(strategyError),
+      });
+    }
+  } catch (err) {
+    next(err);
   }
 });
 

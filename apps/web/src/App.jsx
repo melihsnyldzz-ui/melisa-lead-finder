@@ -260,7 +260,9 @@ export default function App() {
   const [lastRunSummary, setLastRunSummary] = useState(null);
   const [selectedPresetCode, setSelectedPresetCode] = useState('RO');
   const [aiSearchPlan, setAiSearchPlan] = useState(null);
+  const [aiProcessStrategy, setAiProcessStrategy] = useState(null);
   const [isPlanningSearch, setIsPlanningSearch] = useState(false);
+  const [isLoadingProcessStrategy, setIsLoadingProcessStrategy] = useState(false);
   const [searchHistory, setSearchHistory] = useState(null);
   const [runHistory, setRunHistory] = useState([]);
   const [coverage, setCoverage] = useState([]);
@@ -606,6 +608,23 @@ export default function App() {
       return null;
     } finally {
       setIsPlanningSearch(false);
+    }
+  }
+
+  async function loadAiProcessStrategy() {
+    setError(null);
+    setMessage(null);
+    setIsLoadingProcessStrategy(true);
+    try {
+      const strategy = await apiPost('/ai/process-strategy', {});
+      setAiProcessStrategy(strategy);
+      setMessage(strategy.provider === 'GEMINI' ? 'Gemini surec stratejisi hazir' : 'Yerel surec stratejisi hazir');
+      return strategy;
+    } catch (err) {
+      setError(getErrorMessage(err));
+      return null;
+    } finally {
+      setIsLoadingProcessStrategy(false);
     }
   }
 
@@ -1010,6 +1029,9 @@ export default function App() {
             <button disabled={isPlanningSearch} onClick={() => loadAiSearchPlan(selectedPreset)} type="button">
               <Bot size={17} /> {isPlanningSearch ? 'AI hazirlaniyor' : 'AI Plani Yenile'}
             </button>
+            <button className="secondary-button" disabled={isLoadingProcessStrategy} onClick={loadAiProcessStrategy} type="button">
+              <Bot size={17} /> {isLoadingProcessStrategy ? 'Gemini bakiyor' : 'Gemini Sureci Optimize Et'}
+            </button>
             <button className="secondary-button" disabled={isCreatingTask || !!runningTaskId} onClick={createAndRunSmartSearch} type="button">
               <Search size={17} /> Google Magaza Bul
             </button>
@@ -1018,6 +1040,30 @@ export default function App() {
             </button>
           </div>
         </section>
+
+        {aiProcessStrategy && (
+          <section className={`panel process-strategy-panel ${aiProcessStrategy.provider === 'GEMINI' ? 'gemini-source' : ''}`}>
+            <div className="panel-header">
+              <h2><Bot size={18} /> Gemini Surec Stratejisi</h2>
+              <span>{aiProcessStrategy.provider === 'GEMINI' ? 'Canli Gemini' : 'Yerel analiz'} - Guven %{Math.round((aiProcessStrategy.confidence || 0) * 100)}</span>
+            </div>
+            <p>{aiProcessStrategy.summary}</p>
+            {aiProcessStrategy.aiError && <p className="field-note warning">{aiProcessStrategy.aiError}</p>}
+            <div className="process-strategy-roles">
+              <span><strong>Google</strong>{aiProcessStrategy.googleRole}</span>
+              <span><strong>Instagram</strong>{aiProcessStrategy.instagramRole}</span>
+            </div>
+            <div className="ai-run-report-columns">
+              <ReportList title="Siradaki Hamle" items={aiProcessStrategy.nextActions} />
+              <ReportList title="Ogrenme Dongusu" items={aiProcessStrategy.learningLoop} />
+              <ReportList title="Kota Koruma" items={aiProcessStrategy.avoidWastingQuota} />
+            </div>
+            <div className="ai-run-report-columns compact">
+              <ReportList title="Toplanacak Veri" items={aiProcessStrategy.dataToCollect} />
+              <ReportList title="Basari Olcutu" items={aiProcessStrategy.successMetrics} />
+            </div>
+          </section>
+        )}
 
         <section className="kpi-grid">
           <Kpi title="Toplam Lead" value={stats.total} />

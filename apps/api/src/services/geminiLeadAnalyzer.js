@@ -200,6 +200,48 @@ const instagramSearchPlanSchema = {
   additionalProperties: false,
 };
 
+const processStrategySchema = {
+  type: 'object',
+  properties: {
+    summary: { type: 'string' },
+    googleRole: { type: 'string' },
+    instagramRole: { type: 'string' },
+    learningLoop: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    nextActions: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    dataToCollect: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    avoidWastingQuota: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    successMetrics: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    confidence: { type: 'number', minimum: 0, maximum: 1 },
+  },
+  required: [
+    'summary',
+    'googleRole',
+    'instagramRole',
+    'learningLoop',
+    'nextActions',
+    'dataToCollect',
+    'avoidWastingQuota',
+    'successMetrics',
+    'confidence',
+  ],
+  additionalProperties: false,
+};
+
 function getGeminiApiKey() {
   return process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '';
 }
@@ -538,6 +580,55 @@ Rules:
   "cityFocus": ["Varna", "Sofia"],
   "maxResultsPerQuery": 5,
   "confidence": 0.75
+}
+`;
+}
+
+function buildProcessStrategyPrompt({ companyProfile, stats, googleCoverage, instagramCoverage, feedback, recentRuns }) {
+  return `
+You are the AI operating strategist embedded inside Melisa Lead Finder.
+
+Company profile:
+${JSON.stringify(compactCompanyProfileForPrompt(companyProfile), null, 2)}
+
+Current lead stats:
+${JSON.stringify(stats || null, null, 2)}
+
+Google coverage:
+${JSON.stringify(googleCoverage || null, null, 2)}
+
+Instagram coverage:
+${JSON.stringify(instagramCoverage || null, null, 2)}
+
+User feedback:
+${JSON.stringify(feedback || null, null, 2)}
+
+Recent runs:
+${JSON.stringify(recentRuns || null, null, 2)}
+
+Goal:
+Decide how Gemini should be used in the product process to find customers for wholesale baby/kids clothing sales.
+
+Rules:
+- Answer in Turkish.
+- Be practical and operational, not theoretical.
+- Focus on only two channels: Google for physical baby/kids clothing stores, Instagram for online sellers and boutique profiles.
+- Use liked/disliked lead feedback as learning data.
+- Explain how to avoid wasting Gemini, Google, and Apify quota.
+- Give the next 4-6 actions the user should run in this application.
+- Do not invent missing metrics; infer only from the provided data.
+- Return only one valid JSON object. Do not write markdown, code fences, explanations, or text before/after JSON.
+- Use exactly this shape:
+{
+  "summary": "short Turkish operating summary",
+  "googleRole": "how Gemini should guide Google searches",
+  "instagramRole": "how Gemini should guide Instagram searches",
+  "learningLoop": ["how feedback/search results improve the next search"],
+  "nextActions": ["specific next step inside this app"],
+  "dataToCollect": ["data field or feedback to collect"],
+  "avoidWastingQuota": ["quota saving rule"],
+  "successMetrics": ["metric to watch"],
+  "confidence": 0.8
 }
 `;
 }
@@ -893,6 +984,89 @@ function clampInstagramSearchPlan(value, countryPreset = {}) {
   };
 }
 
+function clampProcessStrategy(value) {
+  const toList = (items, fallback = []) => normalizeStringArray(items, fallback, 8);
+  return {
+    provider: value.provider || 'GEMINI',
+    model: value.model || DEFAULT_MODEL,
+    summary: String(value.summary || 'Gemini, Google ve Instagram aramalarini bebek/cocuk giyim alicisi hedefiyle yonetmeli.').slice(0, 700),
+    googleRole: String(value.googleRole || 'Google tarafinda sehir ve keyword secimini kalite, tekrar ve begenilen lead sinyallerine gore optimize eder.').slice(0, 700),
+    instagramRole: String(value.instagramRole || 'Instagram tarafinda sanal magaza, butik, WhatsApp siparis ve online shop sinyali tasiyan profilleri one alir.').slice(0, 700),
+    learningLoop: toList(value.learningLoop, [
+      'Arama sonrasi bulunan, eklenen, tekrar ve ortalama skor verileri Gemini raporuna girer.',
+      'Begenilen leadlerdeki sehir, keyword ve profil sinyalleri sonraki planda yukari alinir.',
+      'Begenilmeyen leadlerdeki kelime ve kategori sinyalleri sonraki planda dislanir.',
+    ]),
+    nextActions: toList(value.nextActions, [
+      'Once secili ulke icin Gemini Google arama planini yenile.',
+      'En yuksek oncelikli sehirde Google Magaza Bul calistir.',
+      'Sicak leadleri begen veya begenme olarak isaretle.',
+      'Ayni ulke icin Instagram Musteri Bul panelinde Gemini kriterlerini olustur.',
+    ]),
+    dataToCollect: toList(value.dataToCollect, [
+      'Lead begenme/begenmeme geri bildirimi',
+      'Telefon, web sitesi, Instagram ve WhatsApp varligi',
+      'Hangi sehir ve keywordden kaliteli lead geldigi',
+    ]),
+    avoidWastingQuota: toList(value.avoidWastingQuota, [
+      'Ayni sehir ve ayni keywordu tekrar tekrar calistirma.',
+      'Once 20-30 sonuc ile kalite testi yap, iyi sonuc varsa limiti artir.',
+      'Gemini kotasi dolarsa yerel planla devam et ve begeni verisini toplamayi surdur.',
+    ]),
+    successMetrics: toList(value.successMetrics, [
+      'Sicak lead orani',
+      'Eklenen lead / bulunan sonuc orani',
+      'Telefon veya WhatsApp olan lead sayisi',
+      'Begenilen lead sayisi',
+    ]),
+    confidence: Number.isFinite(value.confidence) ? Math.max(0, Math.min(1, value.confidence)) : 0.6,
+  };
+}
+
+export function buildFallbackProcessStrategy({ stats = {}, googleCoverage = [], instagramCoverage = [], feedback = {} } = {}) {
+  const googleRuns = googleCoverage.reduce((sum, item) => sum + (item.totalRuns || 0), 0);
+  const instagramRuns = instagramCoverage.reduce((sum, item) => sum + (item.totalRuns || 0), 0);
+  return clampProcessStrategy({
+    provider: 'LOCAL_ANALYSIS',
+    model: null,
+    summary: `Gemini bu programda karar motoru olarak kullanilmali: Google fiziksel magazalari, Instagram sanal satis profillerini bulur; begeni verisi sonraki aramalari egitir. Toplam lead ${stats.total || 0}, Google kosu ${googleRuns}, Instagram kosu ${instagramRuns}.`,
+    googleRole: 'Ulke secilince Gemini en iyi sehirleri, yerel dilde bebek/cocuk giyim keywordlerini ve tekrar edilmeyecek arama siralamasini belirlemeli.',
+    instagramRole: 'Gemini Instagramda shop, boutique, WhatsApp, order, catalog ve kidswear/babywear sinyali tasiyan profil sorgularini uretmeli.',
+    learningLoop: [
+      'Her aramadan sonra Gemini bulunan/eklenen/tekrar/ortalama skor verisini raporlar.',
+      'Begenilen leadlerin sehir ve keywordleri sonraki planlarda yukari alinir.',
+      'Begenilmeyen leadlerin sinyalleri dislama listesine donusur.',
+      'Lead detayi AI analizleri hangi musterilere mesaj atilacagini belirler.',
+    ],
+    nextActions: [
+      'Secili ulkede once Google Magaza Bul icin AI Plani Yenile.',
+      'Ilk sehirde 20-30 sonuc ile kalite testi yap.',
+      'Sicak leadleri begen/begenme butonlariyla isaretle.',
+      'Ayni ulke icin Instagram Musteri Bul panelinde Gemini Kriter Olustur.',
+      'Arama raporundaki sonraki sehir ve keyword onerilerini uygula.',
+    ],
+    dataToCollect: [
+      'Lead begeni durumu',
+      'Telefon, WhatsApp, web sitesi ve Instagram varligi',
+      'Kaynak sorgu, sehir, skor ve tekrar bilgisi',
+      'Gemini AI analizindeki hedef musteri ve toptan potansiyel karari',
+    ],
+    avoidWastingQuota: [
+      'Ayni arama tamamlandiysa son aramalardan ozetini ac, once sonucu incele.',
+      'Zayif sehirlerde ayni keywordu tekrar etme, yerel dil veya butik/shop varyantina gec.',
+      'Instagramda once 5-6 yuksek oncelikli user sorgusu calistir.',
+    ],
+    successMetrics: [
+      'Sicak lead orani',
+      'Eklenen lead / bulunan sonuc orani',
+      'Begenilen lead sayisi',
+      'Telefon veya WhatsApp olan lead sayisi',
+      'Tekrar oraninin dusmesi',
+    ],
+    confidence: (feedback.totalFeedback || 0) > 5 ? 0.74 : 0.62,
+  });
+}
+
 export function buildFallbackSearchPlan({ countryPreset = {}, marketProfile = {}, coverage = null } = {}) {
   const cities = Array.isArray(countryPreset.cities) ? countryPreset.cities : [];
   const searchedCities = new Set((coverage?.cities || [])
@@ -1114,6 +1288,48 @@ export async function createSearchPlanWithGemini({ countryPreset, marketProfile,
     const error = new Error(`Gemini returned invalid search plan JSON: ${err.message}${preview ? ` (${preview})` : ''}`);
     error.status = 502;
     error.cause = err;
+    throw error;
+  }
+}
+
+export async function createProcessStrategyWithGemini({ companyProfile, stats, googleCoverage, instagramCoverage, feedback, recentRuns }) {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    const error = new Error('Gemini API key is not configured');
+    error.status = 400;
+    throw error;
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+  let response;
+  try {
+    response = await generateContentWithRetry(ai, {
+      model: DEFAULT_MODEL,
+      contents: buildProcessStrategyPrompt({ companyProfile, stats, googleCoverage, instagramCoverage, feedback, recentRuns }),
+      config: {
+        temperature: 0.25,
+        responseMimeType: 'application/json',
+        responseSchema: processStrategySchema,
+      },
+    });
+  } catch (err) {
+    const error = new Error(getFriendlyGeminiError(err));
+    error.status = err.status || 502;
+    throw error;
+  }
+
+  const text = response.text;
+  if (!text) {
+    const error = new Error('Gemini returned an empty process strategy');
+    error.status = 502;
+    throw error;
+  }
+
+  try {
+    return clampProcessStrategy(parseGeminiJson(text));
+  } catch (err) {
+    const error = new Error('Gemini returned invalid process strategy JSON');
+    error.status = 502;
     throw error;
   }
 }
