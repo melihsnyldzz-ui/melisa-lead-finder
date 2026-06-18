@@ -260,12 +260,12 @@ export default function App() {
     ? 'AI Ayarlari'
     : activeView === 'instagram'
       ? 'Instagram Arama Paneli'
-      : 'Lead Finder Paneli';
+      : 'Musteri Bul';
   const pageDescription = activeView === 'settings'
     ? 'Firma bilgilerini, hedef musteri profilini ve Gemini AI baglantisini yonet.'
     : activeView === 'instagram'
       ? 'Instagram odakli sanal magaza ve bebek/cocuk giyim profil adaylarini ayri kanalda takip et.'
-      : 'Hedef ulke, sehir ve anahtar kelime gruplariyla Avrasya bebek ve cocuk giyim musteri adaylarini bul.';
+      : 'Ulke sec, AI plani olustursun, Google ve Instagram kaynakli en iyi bebek/cocuk giyim musterilerini bul.';
 
   async function refresh() {
     const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value !== '')).toString();
@@ -879,14 +879,13 @@ export default function App() {
         <div className="brand-block">
           <div className="brand-mark">M</div>
           <div>
-            <strong>Melisa Lead Finder</strong>
-            <span>Planlı Google Places araması</span>
+            <strong>Melisa</strong>
+            <span>AI Lead Finder</span>
           </div>
         </div>
         <nav>
-          <button className={`nav-item ${activeView === 'leads' ? 'active' : ''}`} onClick={() => setActiveView('leads')} type="button"><UsersRound size={18} /> Lead Paneli</button>
-          <button className="nav-item" onClick={() => setActiveView('leads')} type="button"><Search size={18} /> Arama Gorevleri</button>
-          <button className={`nav-item ${activeView === 'instagram' ? 'active' : ''}`} onClick={() => setActiveView('instagram')} type="button"><InstagramIcon size={18} /> Instagram Paneli</button>
+          <button className={`nav-item ${activeView === 'leads' ? 'active' : ''}`} onClick={() => setActiveView('leads')} type="button"><UsersRound size={18} /> Bul</button>
+          <button className={`nav-item ${activeView === 'instagram' ? 'active' : ''}`} onClick={() => setActiveView('instagram')} type="button"><InstagramIcon size={18} /> Instagram</button>
           <button className={`nav-item ${activeView === 'settings' ? 'active' : ''}`} onClick={() => setActiveView('settings')} type="button"><Settings size={18} /> Ayarlar</button>
         </nav>
       </aside>
@@ -904,6 +903,22 @@ export default function App() {
 
         {activeView === 'leads' && (
           <>
+        <section className="apple-hero-panel">
+          <div>
+            <span className="eyebrow">AI destekli musteri kesfi</span>
+            <h2>{selectedPreset?.name || taskForm.country} icin en iyi satis noktalarini bulalim.</h2>
+            <p>Haritadan ulke sec, sistem sehirleri ve arama kriterlerini sade bir plan haline getirsin. Teknik detaylar arka planda kalsin.</p>
+          </div>
+          <div className="hero-actions">
+            <button disabled={isPlanningSearch} onClick={() => loadAiSearchPlan(selectedPreset)} type="button">
+              <Bot size={17} /> {isPlanningSearch ? 'AI hazirlaniyor' : 'AI Plani Yenile'}
+            </button>
+            <button className="secondary-button" disabled={isCreatingTask || !!runningTaskId} onClick={createAndRunSmartSearch} type="button">
+              <Search size={17} /> Musteri Bul
+            </button>
+          </div>
+        </section>
+
         <section className="kpi-grid">
           <Kpi title="Toplam Lead" value={stats.total} />
           <Kpi title="Sıcak Lead" value={stats.hot} icon={<Flame size={22} />} />
@@ -1372,8 +1387,8 @@ export default function App() {
           </div>
         </section>
 
-        <section className="panel wide-panel">
-          <div className="panel-header"><h2>Son Görevler</h2></div>
+        <details className="panel wide-panel advanced-panel">
+          <summary>Gecmis aramalar ve teknik gorevler</summary>
           <div className="task-list">
             {tasks.length === 0 && <div className="empty-state">Henüz arama görevi yok.</div>}
             {tasks.map((task) => (
@@ -1395,7 +1410,7 @@ export default function App() {
               </div>
             ))}
           </div>
-        </section>
+        </details>
         <section className="panel wide-panel">
           <div className="panel-header"><h2>Arama Geçmişi</h2><span>Son {runHistory.length} koşu</span></div>
           <div className="task-list">
