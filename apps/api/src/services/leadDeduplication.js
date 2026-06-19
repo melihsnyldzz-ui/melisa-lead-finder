@@ -43,6 +43,131 @@ function cleanLeadInput(lead) {
   );
 }
 
+function sourceNameForLead(lead) {
+  if (lead.sourceType === 'GOOGLE_PLACES') return 'Google Places';
+  if (['INSTAGRAM', 'INSTAGRAM_APIFY', 'APIFY'].includes(lead.sourceType)) return 'Instagram Apify';
+  if (['WEBSITE', 'WEBSITE_SCAN'].includes(lead.sourceType)) return 'Website Scan';
+  if (lead.sourceType === 'CSV_IMPORT') return 'CSV Import';
+  if (lead.sourceType === 'MANUAL') return 'Manual';
+  return 'Lead Source';
+}
+
+function sourceUrlForLead(lead) {
+  if (lead.instagram) return lead.instagram;
+  if (lead.googleMapsUrl) return lead.googleMapsUrl;
+  if (lead.website) return lead.website;
+  return null;
+}
+
+function sourceTypeForLead(lead) {
+  if (lead.sourceType === 'APIFY') return 'INSTAGRAM_APIFY';
+  return lead.sourceType || 'MANUAL';
+}
+
+function buildLeadSourceData(leadId, lead, confidenceScore) {
+  return {
+    leadId,
+    sourceType: sourceTypeForLead(lead),
+    sourceName: sourceNameForLead(lead),
+    sourceUrl: sourceUrlForLead(lead),
+    sourceQuery: lead.sourceQuery || null,
+    rawPayload: lead.rawPayload || null,
+    confidenceScore: Math.max(0, Math.min(Number(confidenceScore || lead.leadScore || 0), 100)),
+  };
+}
+
+function extractInstagramUsername(lead) {
+  return normalizeInstagram(lead.instagram || lead.displayName || lead.rawPayload?.handle);
+}
+
+function buildInstagramProfileData(leadId, lead, scoring = {}) {
+  const item = lead.rawPayload?.item || {};
+  const username = extractInstagramUsername(lead);
+  const profileUrl = lead.instagram || (username ? `https://www.instagram.com/${username}/` : null);
+  const followerCount = Number(lead.rawPayload?.followers ?? item.followersCount ?? item.followers ?? item.followerCount);
+  const followingCount = Number(item.followsCount ?? item.followingCount ?? item.following);
+  const postCount = Number(item.postsCount ?? item.postCount ?? item.mediaCount);
+
+  return {
+    leadId,
+    username,
+    profileName: lead.displayName || lead.companyName || item.fullName || item.name || null,
+    profileUrl,
+    bio: lead.rawPayload?.bio || item.biography || item.bio || item.description || null,
+    followerCount: Number.isFinite(followerCount) ? followerCount : null,
+    followingCount: Number.isFinite(followingCount) ? followingCount : null,
+    postCount: Number.isFinite(postCount) ? postCount : null,
+    language: lead.rawPayload?.language || null,
+    countrySignal: lead.sourceCountry || lead.country || null,
+    citySignal: lead.sourceCity || lead.city || null,
+    phone: lead.phone || lead.internationalPhoneNumber || null,
+    whatsapp: lead.whatsapp || lead.phone || lead.internationalPhoneNumber || null,
+    email: lead.email || null,
+    website: lead.website || null,
+    riskLabel: scoring.riskLabel || 'UNKNOWN',
+    aiScore: scoring.combinedScore || scoring.leadScore || null,
+    aiScoreReason: scoring.scoreReason || null,
+    rawPayload: lead.rawPayload || null,
+  };
+}
+
+async function createLeadSourceIfUseful(prisma, leadId, input, scoring = {}) {
+  const data = buildLeadSourceData(leadId, input, scoring.combinedScore || scoring.leadScore);
+  if (!data.sourceUrl && !data.sourceQuery && !data.rawPayload) return null;
+
+  const existing = await prisma.leadSource.findFirst({
+    where: {
+      leadId,
+      sourceType: data.sourceType,
+      sourceUrl: data.sourceUrl,
+      sourceQuery: data.sourceQuery,
+    },
+    select: { id: true },
+  });
+  if (existing) return existing;
+
+  return prisma.leadSource.create({ data });
+}
+
+async function upsertInstagramProfileIfUseful(prisma, leadId, input, scoring = {}) {
+  if (!input.instagram && !['INSTAGRAM', 'INSTAGRAM_APIFY', 'APIFY'].includes(input.sourceType)) return null;
+
+  const data = buildInstagramProfileData(leadId, input, scoring);
+  if (!data.username && !data.profileUrl) return null;
+
+  const existing = await prisma.instagramProfile.findFirst({
+    where: {
+      leadId,
+      OR: [
+        data.profileUrl ? { profileUrl: data.profileUrl } : undefined,
+        data.username ? { username: data.username } : undefined,
+      ].filter(Boolean),
+    },
+  });
+
+  if (existing) {
+    return prisma.instagramProfile.update({
+      where: { id: existing.id },
+      data,
+    });
+  }
+
+  return prisma.instagramProfile.create({ data });
+}
+
+async function createActivity(prisma, leadId, activityType, content, result = null) {
+  return prisma.leadActivity.create({
+    data: {
+      leadId,
+      activityType,
+      channel: 'system',
+      content,
+      result,
+      createdBy: 'system',
+    },
+  });
+}
+
 async function findByNormalizedPhone(prisma, lead) {
   const target = normalizePhone(lead.internationalPhoneNumber || lead.phone || lead.whatsapp);
   if (!target) return null;
@@ -127,10 +252,28 @@ export async function createLeadIfNew(prisma, lead) {
   const existing = await findDuplicateLead(prisma, input);
 
   if (existing) {
+    await createLeadSourceIfUseful(prisma, existing.id, input, { leadScore: existing.leadScore, combinedScore: existing.combinedScore });
+    await upsertInstagramProfileIfUseful(prisma, existing.id, input, existing);
+    await createActivity(
+      prisma,
+      existing.id,
+      'SEARCH_DISCOVERY',
+      `Duplicate match from ${sourceNameForLead(input)}${input.sourceQuery ? `: ${input.sourceQuery}` : ''}`,
+      'duplicate_attached',
+    );
     return { lead: existing, created: false };
   }
 
   const scoring = scoreLead(input);
   const createdLead = await prisma.lead.create({ data: { ...input, ...scoring } });
+  await createLeadSourceIfUseful(prisma, createdLead.id, input, scoring);
+  await upsertInstagramProfileIfUseful(prisma, createdLead.id, input, scoring);
+  await createActivity(
+    prisma,
+    createdLead.id,
+    'SEARCH_DISCOVERY',
+    `Lead created from ${sourceNameForLead(input)}${input.sourceQuery ? `: ${input.sourceQuery}` : ''}`,
+    'created',
+  );
   return { lead: createdLead, created: true };
 }

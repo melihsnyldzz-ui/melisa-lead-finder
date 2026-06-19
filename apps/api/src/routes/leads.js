@@ -9,9 +9,27 @@ import { getCompanyProfile } from '../services/companyProfileService.js';
 
 const router = Router();
 
-const leadStatusSchema = z.enum(['NEW', 'HOT', 'REVIEW', 'QUALIFIED', 'LOW_QUALITY', 'REJECTED', 'CONVERTED']);
+const leadStatusSchema = z.enum([
+  'NEW',
+  'HOT',
+  'REVIEW',
+  'QUALIFIED',
+  'CONTACT_READY',
+  'CONTACTED',
+  'REPLIED',
+  'CATALOG_SENT',
+  'OFFER_SENT',
+  'WON',
+  'LOST',
+  'NURTURE',
+  'LOW_QUALITY',
+  'REJECTED',
+  'CONVERTED',
+]);
 const leadFeedbackSchema = z.enum(['NONE', 'LIKED', 'DISLIKED']);
-const sourceTypeSchema = z.enum(['DEMO', 'GOOGLE_PLACES', 'APIFY', 'WEBSITE', 'INSTAGRAM', 'MANUAL']);
+const sourceTypeSchema = z.enum(['DEMO', 'GOOGLE_PLACES', 'APIFY', 'INSTAGRAM_APIFY', 'WEBSITE', 'WEBSITE_SCAN', 'CSV_IMPORT', 'INSTAGRAM', 'MANUAL']);
+const prioritySchema = z.enum(['LOW', 'MEDIUM', 'HIGH', 'VIP']);
+const riskLabelSchema = z.enum(['REAL_STORE', 'WHOLESALER', 'ONLINE_SELLER', 'INFLUENCER', 'PERSONAL_ACCOUNT', 'IRRELEVANT_CATEGORY', 'INACTIVE', 'UNKNOWN']);
 
 const createLeadSchema = z.object({
   companyName: z.string().trim().min(1),
@@ -19,6 +37,7 @@ const createLeadSchema = z.object({
   displayName: z.string().trim().optional().nullable(),
   country: z.string().trim().min(1),
   city: z.string().trim().optional().nullable(),
+  category: z.string().trim().optional().nullable(),
   address: z.string().trim().optional().nullable(),
   phone: z.string().trim().optional().nullable(),
   internationalPhoneNumber: z.string().trim().optional().nullable(),
@@ -39,6 +58,10 @@ const createLeadSchema = z.object({
   rating: z.number().optional().nullable(),
   userRatingsTotal: z.number().int().optional().nullable(),
   status: leadStatusSchema.optional(),
+  priority: prioritySchema.optional(),
+  riskLabel: riskLabelSchema.optional(),
+  nextBestAction: z.string().trim().optional().nullable(),
+  nextFollowUpDate: z.coerce.date().optional().nullable(),
   userFeedback: leadFeedbackSchema.optional(),
   userFeedbackAt: z.coerce.date().optional().nullable(),
   assignedTo: z.string().trim().optional().nullable(),
@@ -48,6 +71,12 @@ const createLeadSchema = z.object({
 
 const updateLeadSchema = createLeadSchema.partial().extend({
   leadScore: z.number().int().min(0).max(100).optional(),
+  combinedScore: z.number().int().min(0).max(100).optional(),
+  fitScore: z.number().int().min(0).max(35).optional(),
+  contactScore: z.number().int().min(0).max(25).optional(),
+  activityScore: z.number().int().min(0).max(15).optional(),
+  potentialScore: z.number().int().min(0).max(20).optional(),
+  riskScore: z.number().int().min(0).max(5).optional(),
   scoreReason: z.string().trim().optional().nullable(),
 });
 

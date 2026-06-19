@@ -12,6 +12,14 @@ enum LeadStatus {
   HOT
   REVIEW
   QUALIFIED
+  CONTACT_READY
+  CONTACTED
+  REPLIED
+  CATALOG_SENT
+  OFFER_SENT
+  WON
+  LOST
+  NURTURE
   LOW_QUALITY
   REJECTED
   CONVERTED
@@ -27,7 +35,10 @@ enum SourceType {
   DEMO
   GOOGLE_PLACES
   APIFY
+  INSTAGRAM_APIFY
   WEBSITE
+  WEBSITE_SCAN
+  CSV_IMPORT
   INSTAGRAM
   MANUAL
 }
@@ -40,6 +51,40 @@ enum SearchTaskStatus {
   FAILED
 }
 
+enum LeadPriority {
+  LOW
+  MEDIUM
+  HIGH
+  VIP
+}
+
+enum RiskLabel {
+  REAL_STORE
+  WHOLESALER
+  ONLINE_SELLER
+  INFLUENCER
+  PERSONAL_ACCOUNT
+  IRRELEVANT_CATEGORY
+  INACTIVE
+  UNKNOWN
+}
+
+enum LeadActivityType {
+  NOTE
+  STATUS_CHANGE
+  FEEDBACK
+  AI_ANALYSIS
+  SEARCH_DISCOVERY
+  CONTACT_ATTEMPT
+  CATALOG_SENT
+  OFFER_SENT
+  REPLY_RECEIVED
+  WON
+  LOST
+  REJECTED
+  NURTURE
+}
+
 model Lead {
   id            String     @id @default(cuid())
   googlePlaceId String?
@@ -47,6 +92,7 @@ model Lead {
   displayName   String?
   country       String
   city          String?
+  category      String?
   address       String?
   phone         String?
   internationalPhoneNumber String?
@@ -61,6 +107,12 @@ model Lead {
   sourceCity    String?
   sourceCountry String?
   leadScore     Int        @default(0)
+  combinedScore Int        @default(0)
+  fitScore       Int        @default(0)
+  contactScore   Int        @default(0)
+  activityScore  Int        @default(0)
+  potentialScore Int        @default(0)
+  riskScore      Int        @default(0)
   scoreReason   String?
   categoryGuess String?
   businessStatus String?
@@ -69,6 +121,10 @@ model Lead {
   rating        Float?
   userRatingsTotal Int?
   status        LeadStatus @default(NEW)
+  priority      LeadPriority @default(MEDIUM)
+  riskLabel     RiskLabel  @default(UNKNOWN)
+  nextBestAction String?
+  nextFollowUpDate DateTime?
   userFeedback  LeadFeedback @default(NONE)
   userFeedbackAt DateTime?
   assignedTo    String?
@@ -79,11 +135,82 @@ model Lead {
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
+  sources           LeadSource[]
+  instagramProfiles InstagramProfile[]
+  activities        LeadActivity[]
+
   @@index([country])
   @@index([city])
   @@index([status])
+  @@index([priority])
   @@index([leadScore])
+  @@index([combinedScore])
   @@index([googlePlaceId])
+}
+
+model LeadSource {
+  id              String     @id @default(cuid())
+  leadId          String
+  lead            Lead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  sourceType      SourceType
+  sourceName      String?
+  sourceUrl       String?
+  sourceQuery     String?
+  rawPayload      Json?
+  confidenceScore Int        @default(0)
+  createdAt       DateTime   @default(now())
+
+  @@index([leadId])
+  @@index([sourceType])
+  @@index([sourceQuery])
+}
+
+model InstagramProfile {
+  id                    String    @id @default(cuid())
+  leadId                String
+  lead                  Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  username              String?
+  profileName           String?
+  profileUrl            String?
+  bio                   String?
+  followerCount         Int?
+  followingCount        Int?
+  postCount             Int?
+  lastPostDate          DateTime?
+  language              String?
+  countrySignal         String?
+  citySignal            String?
+  phone                 String?
+  whatsapp              String?
+  email                 String?
+  website               String?
+  riskLabel             RiskLabel @default(UNKNOWN)
+  aiScore               Int?
+  aiScoreReason         String?
+  suggestedFirstMessage String?
+  rawPayload            Json?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([leadId])
+  @@index([username])
+  @@index([profileUrl])
+}
+
+model LeadActivity {
+  id           String           @id @default(cuid())
+  leadId       String
+  lead         Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  activityType LeadActivityType
+  channel      String?
+  content      String?
+  result       String?
+  createdBy    String?
+  createdAt    DateTime         @default(now())
+
+  @@index([leadId])
+  @@index([activityType])
+  @@index([createdAt])
 }
 
 model SearchTask {

@@ -253,6 +253,13 @@ function scoreStatus(score) {
   return 'LOW_QUALITY';
 }
 
+function scorePriority(score) {
+  if (score >= 90) return 'VIP';
+  if (score >= 80) return 'HIGH';
+  if (score >= 50) return 'MEDIUM';
+  return 'LOW';
+}
+
 function includesAny(text, terms) {
   return terms.some((term) => text.includes(term));
 }
@@ -305,6 +312,11 @@ export function isClearlyOutsideBabyKidsClothingTarget(lead) {
 export function scoreLead(lead) {
   const reasons = [];
   let score = 0;
+  let fitScore = 0;
+  let contactScore = 0;
+  let activityScore = 0;
+  let potentialScore = 0;
+  let riskScore = 5;
 
   const resultText = buildResultText(lead);
   const queryText = buildQueryText(lead);
@@ -319,74 +331,94 @@ export function scoreLead(lead) {
 
   if (isTarget) {
     score += 35;
+    fitScore = 35;
     reasons.push('confirmed baby/kids clothing signal');
   } else if (hasClothingSignal) {
     score -= 10;
+    fitScore = 10;
     reasons.push('general clothing only; no baby/kids proof');
   } else if (hasAudienceSignal) {
     score -= 10;
+    fitScore = 8;
     reasons.push('baby/kids signal without clothing proof');
   }
 
   if (lead.phone || lead.internationalPhoneNumber || lead.whatsapp) {
     score += 20;
+    contactScore += 15;
     reasons.push('phone exists');
   }
   if (lead.website) {
     score += 15;
+    contactScore += 5;
     reasons.push('website exists');
   }
   if (lead.instagram) {
     score += 15;
+    contactScore += 5;
     reasons.push('instagram profile exists');
   }
-  if (lead.sourceType === 'INSTAGRAM' && isTarget) {
+  const isInstagramSource = ['INSTAGRAM', 'INSTAGRAM_APIFY', 'APIFY'].includes(lead.sourceType);
+
+  if (isInstagramSource && isTarget) {
     score += 10;
+    potentialScore += 8;
     reasons.push('instagram-only baby/kids clothing sales channel');
   }
   if (includesAny(resultText, SALES_READY_TERMS)) {
-    score += lead.sourceType === 'INSTAGRAM' ? 12 : 6;
+    score += isInstagramSource ? 12 : 6;
+    potentialScore += isInstagramSource ? 8 : 4;
     reasons.push('sales-ready shop signal');
   }
   if ((lead.rawPayload?.followers || 0) >= 5000) {
     score += 10;
+    activityScore += 6;
     reasons.push('instagram audience signal');
   }
   if ((lead.rating || lead.rawPayload?.rating || 0) >= 4) {
     score += 10;
+    activityScore += 4;
     reasons.push('rating >= 4.0');
   }
   if ((lead.userRatingsTotal || lead.rawPayload?.userRatingsTotal || lead.rawPayload?.reviewCount || 0) >= 20) {
     score += 10;
+    activityScore += 4;
     reasons.push('20+ reviews');
   }
   if (lead.businessStatus === 'OPERATIONAL' || lead.rawPayload?.businessStatus === 'OPERATIONAL') {
     score += 10;
+    activityScore += 3;
     reasons.push('business operational');
   }
   if (lead.openingHours) {
     score += 5;
+    activityScore += 2;
     reasons.push('opening hours exist');
   }
   if (professionalDomain(lead.website)) {
     score += 5;
+    potentialScore += 4;
     reasons.push('professional website domain');
   }
 
   if (['CLOSED_TEMPORARILY', 'CLOSED_PERMANENTLY'].includes(lead.businessStatus)) {
     score -= 20;
+    riskScore = 0;
     reasons.push('business closed');
   }
   if ((lead.types || []).some((type) => UNRELATED_TYPES.includes(type))) {
     score -= 20;
+    riskScore = 0;
     reasons.push('unrelated place type');
   }
   if (includesAny(text, UNRELATED_TERMS) && !isTarget) {
     score -= 25;
+    riskScore = 0;
     reasons.push('unrelated product signal');
   }
-  if (lead.sourceType === 'INSTAGRAM' && includesAny(resultText, LOW_INTENT_PROFILE_TERMS) && !includesAny(resultText, SALES_READY_TERMS)) {
+  if (isInstagramSource && includesAny(resultText, LOW_INTENT_PROFILE_TERMS) && !includesAny(resultText, SALES_READY_TERMS)) {
     score -= 20;
+    riskScore = Math.min(riskScore, 1);
     reasons.push('low-intent social profile');
   }
   if (!hasClothingSignal) {
@@ -407,9 +439,40 @@ export function scoreLead(lead) {
   }
 
   const leadScore = Math.max(0, Math.min(score, 100));
+  const hasContact = Boolean(lead.whatsapp || lead.phone || lead.internationalPhoneNumber || lead.email || lead.website || lead.instagram);
+  const riskLabel = !isTarget
+    ? 'IRRELEVANT_CATEGORY'
+    : includesAny(resultText, LOW_INTENT_PROFILE_TERMS) && !includesAny(resultText, SALES_READY_TERMS)
+      ? 'INFLUENCER'
+      : isInstagramSource
+        ? 'ONLINE_SELLER'
+        : includesAny(resultText, ['wholesale', 'toptan'])
+          ? 'WHOLESALER'
+          : 'REAL_STORE';
+  const nextBestAction = !isTarget
+    ? 'REVIEW_MANUALLY'
+    : lead.whatsapp || lead.phone || lead.internationalPhoneNumber
+      ? 'CONTACT_ON_WHATSAPP'
+      : lead.instagram
+        ? 'CONTACT_ON_INSTAGRAM'
+        : lead.email
+          ? 'SEND_EMAIL'
+          : hasContact
+            ? 'REVIEW_MANUALLY'
+            : 'NURTURE';
+
   return {
     leadScore,
+    combinedScore: leadScore,
+    fitScore: Math.max(0, Math.min(fitScore, 35)),
+    contactScore: Math.max(0, Math.min(contactScore, 25)),
+    activityScore: Math.max(0, Math.min(activityScore, 15)),
+    potentialScore: Math.max(0, Math.min(potentialScore, 20)),
+    riskScore: Math.max(0, Math.min(riskScore, 5)),
     scoreReason: reasons.join('; ') || 'no strong signal',
     status: scoreStatus(leadScore),
+    priority: scorePriority(leadScore),
+    riskLabel,
+    nextBestAction,
   };
 }
