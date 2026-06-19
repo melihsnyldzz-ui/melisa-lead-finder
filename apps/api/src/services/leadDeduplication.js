@@ -21,6 +21,20 @@ function normalizeDomain(value) {
   }
 }
 
+function normalizeInstagram(value) {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+    if (host !== 'instagram.com') return null;
+    const handle = parsed.pathname.split('/').filter(Boolean)[0];
+    return handle ? handle.replace(/^@/, '').toLowerCase() : null;
+  } catch {
+    const handle = String(value).trim().replace(/^@/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').split(/[/?#]/)[0];
+    return handle ? handle.toLowerCase() : null;
+  }
+}
+
 function cleanLeadInput(lead) {
   return Object.fromEntries(
     Object.entries(lead).map(([key, value]) => [key, clean(value)]),
@@ -56,6 +70,26 @@ async function findByNormalizedDomain(prisma, lead) {
   return match ? prisma.lead.findUnique({ where: { id: match.id } }) : null;
 }
 
+async function findByNormalizedInstagram(prisma, lead) {
+  const target = normalizeInstagram(lead.instagram || lead.displayName);
+  if (!target) return null;
+
+  const candidates = await prisma.lead.findMany({
+    where: {
+      OR: [
+        { instagram: { not: null } },
+        { displayName: { not: null } },
+      ],
+    },
+    select: { id: true, instagram: true, displayName: true },
+    take: 5000,
+  });
+  const match = candidates.find((candidate) => (
+    normalizeInstagram(candidate.instagram || candidate.displayName) === target
+  ));
+  return match ? prisma.lead.findUnique({ where: { id: match.id } }) : null;
+}
+
 export async function findDuplicateLead(prisma, lead) {
   const input = cleanLeadInput(lead);
 
@@ -69,6 +103,9 @@ export async function findDuplicateLead(prisma, lead) {
 
   const byDomain = await findByNormalizedDomain(prisma, input);
   if (byDomain) return byDomain;
+
+  const byInstagram = await findByNormalizedInstagram(prisma, input);
+  if (byInstagram) return byInstagram;
 
   if (input.companyName && input.city) {
     const byNameCity = await prisma.lead.findFirst({

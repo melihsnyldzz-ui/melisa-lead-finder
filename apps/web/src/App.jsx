@@ -326,8 +326,26 @@ export default function App() {
   const markerLayerRef = useRef(null);
 
   const hotLeads = useMemo(() => leads.filter((lead) => lead.leadScore >= 80 || lead.status === 'HOT'), [leads]);
-  const hotInstagramLeads = useMemo(() => instagramLeads.filter((lead) => lead.leadScore >= 80 || lead.status === 'HOT'), [instagramLeads]);
-  const likedInstagramLeads = useMemo(() => instagramLeads.filter((lead) => lead.userFeedback === 'LIKED'), [instagramLeads]);
+  const uniqueInstagramLeads = useMemo(() => {
+    const byKey = new Map();
+    for (const lead of instagramLeads) {
+      const key = lead.instagram || lead.displayName || lead.id;
+      const current = byKey.get(key);
+      if (!current || (lead.leadScore || 0) > (current.leadScore || 0)) byKey.set(key, lead);
+    }
+    return [...byKey.values()];
+  }, [instagramLeads]);
+  const hotInstagramLeads = useMemo(() => uniqueInstagramLeads.filter((lead) => lead.leadScore >= 80 || lead.status === 'HOT'), [uniqueInstagramLeads]);
+  const likedInstagramLeads = useMemo(() => uniqueInstagramLeads.filter((lead) => lead.userFeedback === 'LIKED'), [uniqueInstagramLeads]);
+  const instagramRunResults = useMemo(() => {
+    const results = instagramSummary?.searchedResults || [];
+    const byKey = new Map();
+    for (const result of results) {
+      const key = result.instagram || result.id || `${result.companyName}-${result.city}-${result.sourceQuery}`;
+      if (!byKey.has(key)) byKey.set(key, result);
+    }
+    return [...byKey.values()];
+  }, [instagramSummary]);
   const selectedPreset = useMemo(
     () => balkanCountryPresets.find((preset) => preset.code === selectedPresetCode),
     [selectedPresetCode],
@@ -1840,10 +1858,10 @@ export default function App() {
               <div className="panel instagram-summary-panel">
                 <div className="panel-header">
                   <h2>Takip Ozeti</h2>
-                  <span>{instagramLeads.length} Instagram lead</span>
+                  <span>{uniqueInstagramLeads.length} tekil Instagram lead</span>
                 </div>
                 <div className="instagram-kpis">
-                  <Kpi title="Instagram Lead" value={instagramLeads.length} />
+                  <Kpi title="Tekil Lead" value={uniqueInstagramLeads.length} />
                   <Kpi title="Sicak" value={hotInstagramLeads.length} />
                   <Kpi title="Begenilen" value={likedInstagramLeads.length} />
                   <Kpi title="Canli Mod" value={providers.INSTAGRAM?.mode === 'APIFY' ? 'Apify' : 'Yerel'} />
@@ -1864,47 +1882,72 @@ export default function App() {
 
             <section className="panel wide-panel">
               <div className="panel-header">
-                <h2>Instagram Adaylari</h2>
-                <span>{instagramForm.country} {instagramForm.city}</span>
+                <h2>Son Aramada Bulunanlar</h2>
+                <span>{instagramRunResults.length ? `${instagramRunResults.length} sonuc` : `${instagramForm.country} ${instagramForm.city}`}</span>
               </div>
-              <div className="instagram-lead-grid">
-                {instagramLeads.length === 0 && <div className="empty-state">Bu ulke/sehir icin Instagram lead yok. Ilk aramayi calistir.</div>}
-                {instagramLeads.map((lead) => (
-                  <article className="instagram-lead-card" key={lead.id}>
-                    <div className="instagram-card-header">
-                      <strong>{lead.companyName}</strong>
-                      <span className={lead.leadScore >= 80 ? 'score hot' : 'score'}>{lead.leadScore}</span>
-                    </div>
-                    <small>{lead.city || lead.country} - {lead.sourceKeyword || 'Instagram profil'}</small>
-                    <p>{lead.scoreReason || lead.categoryGuess || 'Instagram profil adayi'}</p>
-                    <div className="instagram-card-links">
-                      <a className={!lead.instagram ? 'disabled-link' : ''} href={lead.instagram || undefined} rel="noreferrer" target="_blank"><InstagramIcon size={15} /> Profil</a>
-                      <a className={!lead.whatsapp && !lead.phone ? 'disabled-link' : ''} href={(lead.whatsapp || lead.phone) ? `https://wa.me/${normalizePhoneForWhatsApp(lead.whatsapp || lead.phone)}` : undefined} rel="noreferrer" target="_blank"><MessageCircle size={15} /> WhatsApp</a>
-                      <button onClick={() => { setSelectedLead(lead); setActiveView('allLeads'); }} type="button">Detaya Al</button>
-                    </div>
-                    <div className="lead-feedback-actions">
-                      <button
-                        aria-label="Instagram lead begenildi"
-                        className={lead.userFeedback === 'LIKED' ? 'active' : ''}
-                        disabled={updatingLeadFeedback === lead.id}
-                        onClick={() => updateLeadFeedback(lead.id, lead.userFeedback === 'LIKED' ? 'NONE' : 'LIKED')}
-                        type="button"
-                      >
-                        <ThumbsUp size={14} />
-                      </button>
-                      <button
-                        aria-label="Instagram lead begenilmedi"
-                        className={lead.userFeedback === 'DISLIKED' ? 'active negative' : ''}
-                        disabled={updatingLeadFeedback === lead.id}
-                        onClick={() => updateLeadFeedback(lead.id, lead.userFeedback === 'DISLIKED' ? 'NONE' : 'DISLIKED')}
-                        type="button"
-                      >
-                        <ThumbsDown size={14} />
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
+              {instagramRunResults.length === 0 ? (
+                <div className="empty-state">Yeni bir Instagram aramasi calistirinca sadece o aramanin sonuclari burada gorunur. Eski leadler arsivde tutulur.</div>
+              ) : (
+                <div className="searched-results-list instagram-current-results">
+                  {instagramRunResults.map((result) => (
+                    <button
+                      className={`searched-result-row searched-${result.status}`}
+                      disabled={!result.id}
+                      key={`${result.instagram || result.companyName}-${result.sourceQuery}-${result.status}`}
+                      onClick={() => selectRunResult(result)}
+                      type="button"
+                    >
+                      <span>
+                        <strong>{result.companyName}</strong>
+                        <small>{result.city || result.country} - {result.sourceQuery || result.sourceKeyword}</small>
+                      </span>
+                      <em>{runResultStatusLabels[result.status] || result.status}</em>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <details className="instagram-archive-panel">
+                <summary>Tum Instagram lead arsivi ({uniqueInstagramLeads.length} tekil)</summary>
+                <div className="instagram-lead-grid">
+                  {uniqueInstagramLeads.length === 0 && <div className="empty-state">Bu ulke/sehir icin Instagram lead yok. Ilk aramayi calistir.</div>}
+                  {uniqueInstagramLeads.map((lead) => (
+                    <article className="instagram-lead-card" key={lead.id}>
+                      <div className="instagram-card-header">
+                        <strong>{lead.companyName}</strong>
+                        <span className={lead.leadScore >= 80 ? 'score hot' : 'score'}>{lead.leadScore}</span>
+                      </div>
+                      <small>{lead.city || lead.country} - {lead.sourceKeyword || 'Instagram profil'}</small>
+                      <p>{lead.scoreReason || lead.categoryGuess || 'Instagram profil adayi'}</p>
+                      <div className="instagram-card-links">
+                        <a className={!lead.instagram ? 'disabled-link' : ''} href={lead.instagram || undefined} rel="noreferrer" target="_blank"><InstagramIcon size={15} /> Profil</a>
+                        <a className={!lead.whatsapp && !lead.phone ? 'disabled-link' : ''} href={(lead.whatsapp || lead.phone) ? `https://wa.me/${normalizePhoneForWhatsApp(lead.whatsapp || lead.phone)}` : undefined} rel="noreferrer" target="_blank"><MessageCircle size={15} /> WhatsApp</a>
+                        <button onClick={() => { setSelectedLead(lead); setActiveView('allLeads'); }} type="button">Detaya Al</button>
+                      </div>
+                      <div className="lead-feedback-actions">
+                        <button
+                          aria-label="Instagram lead begenildi"
+                          className={lead.userFeedback === 'LIKED' ? 'active' : ''}
+                          disabled={updatingLeadFeedback === lead.id}
+                          onClick={() => updateLeadFeedback(lead.id, lead.userFeedback === 'LIKED' ? 'NONE' : 'LIKED')}
+                          type="button"
+                        >
+                          <ThumbsUp size={14} />
+                        </button>
+                        <button
+                          aria-label="Instagram lead begenilmedi"
+                          className={lead.userFeedback === 'DISLIKED' ? 'active negative' : ''}
+                          disabled={updatingLeadFeedback === lead.id}
+                          onClick={() => updateLeadFeedback(lead.id, lead.userFeedback === 'DISLIKED' ? 'NONE' : 'DISLIKED')}
+                          type="button"
+                        >
+                          <ThumbsDown size={14} />
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </details>
             </section>
           </>
         )}
