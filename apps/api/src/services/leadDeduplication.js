@@ -23,14 +23,16 @@ function normalizeDomain(value) {
 
 function normalizeInstagram(value) {
   if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw.includes('instagram.com') && !raw.startsWith('@')) return null;
   try {
-    const parsed = new URL(value);
+    const parsed = new URL(raw);
     const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
     if (host !== 'instagram.com') return null;
     const handle = parsed.pathname.split('/').filter(Boolean)[0];
     return handle ? handle.replace(/^@/, '').toLowerCase() : null;
   } catch {
-    const handle = String(value).trim().replace(/^@/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').split(/[/?#]/)[0];
+    const handle = raw.replace(/^@/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').split(/[/?#]/)[0];
     return handle ? handle.toLowerCase() : null;
   }
 }

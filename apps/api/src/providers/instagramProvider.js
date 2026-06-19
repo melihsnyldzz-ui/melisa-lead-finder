@@ -165,14 +165,29 @@ async function runApifyInstagramSearch(task) {
   if (!input) return null;
 
   const url = `https://api.apify.com/v2/actors/${normalizeActorId(actorId)}/run-sync-get-dataset-items?clean=true&format=json`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(input),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const error = new Error('Apify Instagram actor timed out after 60 seconds');
+      error.status = 504;
+      throw error;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     const text = await response.text();

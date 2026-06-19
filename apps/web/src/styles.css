@@ -197,6 +197,7 @@ input:focus, select:focus, textarea:focus { border-color: #0071e3; box-shadow: 0
 .field-note { grid-column: 1 / -1; margin: -4px 0 8px; color: #8a7466; font-size: 13px; }
 .field-note.warning { background: #fff4d8; border: 1px solid #e9c56a; border-radius: 8px; color: #7b4c00; padding: 10px 12px; }
 .field-note.success { background: #edf7ef; border: 1px solid #b8dec0; border-radius: 8px; color: #245c34; padding: 10px 12px; }
+.danger-button { background: #fff0ed !important; color: #8d2b1f !important; }
 .coverage-list { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .coverage-list span { border-radius: 999px; padding: 5px 8px; font-size: 12px; font-weight: 800; }
 .coverage-done { background: #edf7ef; color: #245c34; }

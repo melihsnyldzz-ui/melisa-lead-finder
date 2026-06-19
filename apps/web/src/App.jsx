@@ -302,6 +302,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [isRunningInstagramSearch, setIsRunningInstagramSearch] = useState(false);
+  const [instagramRunStatus, setInstagramRunStatus] = useState('');
   const [isSavingCompanyProfile, setIsSavingCompanyProfile] = useState(false);
   const [isTestingGemini, setIsTestingGemini] = useState(false);
   const [geminiTest, setGeminiTest] = useState(null);
@@ -324,6 +325,7 @@ export default function App() {
   const mapElementRef = useRef(null);
   const leafletMapRef = useRef(null);
   const markerLayerRef = useRef(null);
+  const instagramAbortRef = useRef(null);
 
   const hotLeads = useMemo(() => leads.filter((lead) => lead.leadScore >= 80 || lead.status === 'HOT'), [leads]);
   const uniqueInstagramLeads = useMemo(() => {
@@ -621,12 +623,17 @@ export default function App() {
     setMessage(null);
     setInstagramSummary(null);
     setIsRunningInstagramSearch(true);
+    setInstagramRunStatus('Instagram arama plani hazirlaniyor...');
+    const controller = new AbortController();
+    instagramAbortRef.current = controller;
     try {
       const activePlan = instagramAiPlan || await loadInstagramAiPlan();
       if (!activePlan) return;
       const queries = getInstagramPlanQueries(activePlan);
       const summaries = [];
-      for (const item of queries) {
+      for (const [index, item] of queries.entries()) {
+        if (controller.signal.aborted) break;
+        setInstagramRunStatus(`${index + 1}/${queries.length} sorgu calisiyor: ${item.query}`);
         const created = await apiPost('/search-tasks', {
           name: `${instagramForm.country} ${instagramForm.city} Instagram ${item.query}`,
           country: instagramForm.country,
@@ -638,8 +645,8 @@ export default function App() {
           sourceType: 'INSTAGRAM',
           maxResults: Number(activePlan?.maxResultsPerQuery || instagramForm.maxResults),
           allowDuplicate: true,
-        });
-        const runSummary = await apiPost(`/search-tasks/${created.id}/run`, {});
+        }, { signal: controller.signal, timeoutMs: 30000 });
+        const runSummary = await apiPost(`/search-tasks/${created.id}/run`, {}, { signal: controller.signal, timeoutMs: 75000 });
         writeRunSummaryCache(runSummary);
         summaries.push(runSummary);
       }
@@ -658,7 +665,14 @@ export default function App() {
       setError(getErrorMessage(err));
     } finally {
       setIsRunningInstagramSearch(false);
+      setInstagramRunStatus('');
+      instagramAbortRef.current = null;
     }
+  }
+
+  function stopInstagramSearch() {
+    instagramAbortRef.current?.abort();
+    setInstagramRunStatus('Arama durduruluyor...');
   }
 
   function getAutomaticTaskPayload(overrides = {}) {
@@ -1851,8 +1865,12 @@ export default function App() {
                   <button disabled={isRunningInstagramSearch} type="submit">
                     <InstagramIcon size={16} /> {isRunningInstagramSearch ? 'Araniyor' : 'Gemini ile Instagram Bul'}
                   </button>
+                  {isRunningInstagramSearch && (
+                    <button className="secondary-button danger-button" onClick={stopInstagramSearch} type="button">Durdur</button>
+                  )}
                   <button className="secondary-button" disabled={isRunningInstagramSearch} onClick={refreshInstagramLeads} type="button">Listeyi Yenile</button>
                 </div>
+                {instagramRunStatus && <p className="field-note warning">{instagramRunStatus}</p>}
               </form>
 
               <div className="panel instagram-summary-panel">
