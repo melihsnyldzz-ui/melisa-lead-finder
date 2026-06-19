@@ -576,9 +576,13 @@ export default function App() {
     setInstagramAiPlan(null);
     setIsPlanningInstagramSearch(true);
     try {
-      const plan = await apiPost('/ai/instagram-search-plan', {
-        countryPreset: buildCountryPresetPayload(preset),
-        marketProfile: countryMarketProfiles[preset.code] || null,
+      const plan = await apiPost('/instagram/search-plan/gemini', {
+        country: preset.name,
+        city: instagramForm.city || preset.cities[0],
+        targetCustomerType: 'Instagram online baby/kids clothing sellers, boutiques, WhatsApp order stores',
+        productCategory: 'baby and kids clothing',
+        maxQueries: 10,
+        maxResults: Number(instagramForm.maxResults || 60),
       });
       setInstagramAiPlan(plan);
       const firstQuery = plan.searchQueries?.find((item) => item.searchType === 'user') || plan.searchQueries?.[0];

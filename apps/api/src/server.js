@@ -3,6 +3,7 @@ import cors from 'cors';
 import express from 'express';
 import { ZodError } from 'zod';
 import aiRouter from './routes/ai.js';
+import instagramRouter from './routes/instagram.js';
 import leadsRouter from './routes/leads.js';
 import providersRouter from './routes/providers.js';
 import searchTasksRouter from './routes/searchTasks.js';
@@ -19,6 +20,7 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/leads', leadsRouter);
 app.use('/api/ai', aiRouter);
+app.use('/api/instagram', instagramRouter);
 app.use('/api/providers', providersRouter);
 app.use('/api/search-tasks', searchTasksRouter);
 
