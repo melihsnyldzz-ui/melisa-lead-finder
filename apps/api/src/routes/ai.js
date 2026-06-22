@@ -164,11 +164,19 @@ function cleanLearningValue(value) {
   return String(value || '').trim().replace(/^(user|hashtag|place):\s*/i, '');
 }
 
+function sourceTypeWhere(sourceType = null) {
+  if (!sourceType) return {};
+  if (Array.isArray(sourceType)) return { sourceType: { in: sourceType } };
+  return { sourceType };
+}
+
+const instagramSourceTypes = ['INSTAGRAM', 'INSTAGRAM_APIFY', 'APIFY'];
+
 async function summarizeLeadFeedback(country, sourceType = null) {
   const feedbackLeads = await prisma.lead.findMany({
     where: {
       ...(country ? { country: { equals: country, mode: 'insensitive' } } : {}),
-      ...(sourceType ? { sourceType } : {}),
+      ...sourceTypeWhere(sourceType),
       userFeedback: { in: ['LIKED', 'DISLIKED'] },
     },
     orderBy: { userFeedbackAt: 'desc' },
@@ -290,6 +298,83 @@ function compactRunForStrategy(run) {
   };
 }
 
+function buildLearningSnapshot({ feedback, googleCoverage, instagramCoverage, recentRuns }) {
+  const safeFeedback = feedback || {};
+  const summarizeCoverage = (coverage = {}) => ({
+    bestCities: (coverage.bestCities || []).slice(0, 3).map((item) => item.name),
+    weakCities: (coverage.weakCities || []).slice(0, 3).map((item) => item.name),
+    bestKeywords: (coverage.bestKeywords || []).slice(0, 5).map((item) => item.name),
+    weakKeywords: (coverage.weakKeywords || []).slice(0, 5).map((item) => item.name),
+  });
+
+  return {
+    totalFeedback: safeFeedback.totalFeedback || 0,
+    likedSignals: {
+      cities: (safeFeedback.likedCities || []).slice(0, 5),
+      keywords: (safeFeedback.likedKeywords || []).slice(0, 6),
+      terms: (safeFeedback.likedTerms || []).slice(0, 8),
+      patterns: (safeFeedback.likedPatterns || []).slice(0, 4),
+    },
+    dislikedSignals: {
+      cities: (safeFeedback.dislikedCities || []).slice(0, 5),
+      keywords: (safeFeedback.dislikedKeywords || []).slice(0, 6),
+      terms: (safeFeedback.dislikedTerms || []).slice(0, 8),
+      patterns: (safeFeedback.dislikedPatterns || []).slice(0, 4),
+    },
+    google: summarizeCoverage(googleCoverage),
+    instagram: summarizeCoverage(instagramCoverage),
+    recentRuns: (recentRuns || []).slice(0, 5),
+  };
+}
+
+async function getCountryLearningSnapshot(country) {
+  const countryWhere = country ? { country: { equals: country, mode: 'insensitive' } } : {};
+  const [googleCoverage, instagramCoverage, recentRuns, feedback] = await Promise.all([
+    prisma.searchRunHistory.findMany({
+      where: { ...countryWhere, sourceType: 'GOOGLE_PLACES' },
+      orderBy: { ranAt: 'desc' },
+      take: 120,
+    }),
+    prisma.searchRunHistory.findMany({
+      where: { ...countryWhere, sourceType: { in: instagramSourceTypes } },
+      orderBy: { ranAt: 'desc' },
+      take: 120,
+    }),
+    prisma.searchRunHistory.findMany({
+      where: countryWhere,
+      orderBy: { ranAt: 'desc' },
+      take: 20,
+    }),
+    summarizeLeadFeedback(country || null),
+  ]);
+
+  const googlePerformance = summarizeRunPerformance(googleCoverage);
+  const instagramPerformance = summarizeRunPerformance(instagramCoverage);
+  const compactRecentRuns = recentRuns.map(compactRunForStrategy);
+
+  return {
+    country: country || null,
+    feedback,
+    googlePerformance,
+    instagramPerformance,
+    snapshot: buildLearningSnapshot({
+      feedback,
+      googleCoverage: googlePerformance,
+      instagramCoverage: instagramPerformance,
+      recentRuns: compactRecentRuns,
+    }),
+  };
+}
+
+router.get('/learning-summary', async (req, res, next) => {
+  try {
+    const country = typeof req.query.country === 'string' ? req.query.country.trim() : '';
+    res.json(await getCountryLearningSnapshot(country));
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/process-strategy', async (req, res, next) => {
   try {
     const input = searchPlanSchema.parse(req.body);
@@ -316,7 +401,7 @@ router.post('/process-strategy', async (req, res, next) => {
         take: 120,
       }),
       prisma.searchRunHistory.findMany({
-        where: { ...countryWhere, sourceType: 'INSTAGRAM' },
+        where: { ...countryWhere, sourceType: { in: instagramSourceTypes } },
         orderBy: { ranAt: 'desc' },
         take: 120,
       }),
@@ -326,6 +411,11 @@ router.post('/process-strategy', async (req, res, next) => {
         take: 20,
       }),
     ]);
+
+    const googlePerformance = summarizeRunPerformance(googleCoverage);
+    const instagramPerformance = summarizeRunPerformance(instagramCoverage);
+    const feedback = await summarizeLeadFeedback(input.countryPreset.name);
+    const compactRecentRuns = recentRuns.map(compactRunForStrategy);
 
     const payload = {
       countryPreset: input.countryPreset,
@@ -338,18 +428,25 @@ router.post('/process-strategy', async (req, res, next) => {
         liked: likedLeads,
         disliked: dislikedLeads,
       },
-      googleCoverage: summarizeRunPerformance(googleCoverage),
-      instagramCoverage: summarizeRunPerformance(instagramCoverage),
-      feedback: await summarizeLeadFeedback(input.countryPreset.name),
-      recentRuns: recentRuns.map(compactRunForStrategy),
+      googleCoverage: googlePerformance,
+      instagramCoverage: instagramPerformance,
+      feedback,
+      recentRuns: compactRecentRuns,
     };
+    const learningSnapshot = buildLearningSnapshot({
+      feedback,
+      googleCoverage: googlePerformance,
+      instagramCoverage: instagramPerformance,
+      recentRuns: compactRecentRuns,
+    });
 
     try {
       const strategy = await createProcessStrategyWithGemini(payload);
-      res.json(strategy);
+      res.json({ ...strategy, learningSnapshot });
     } catch (strategyError) {
       res.json({
         ...buildFallbackProcessStrategy(payload),
+        learningSnapshot,
         aiError: getFriendlyGeminiError(strategyError),
       });
     }
@@ -430,7 +527,7 @@ router.post('/instagram-search-plan', async (req, res, next) => {
     const coverage = await prisma.searchRunHistory.findMany({
       where: {
         country: { equals: input.countryPreset.name, mode: 'insensitive' },
-        sourceType: 'INSTAGRAM',
+        sourceType: { in: instagramSourceTypes },
       },
       orderBy: { ranAt: 'desc' },
       take: 100,
@@ -461,7 +558,7 @@ router.post('/instagram-search-plan', async (req, res, next) => {
       totalRuns: coverage.length,
       cities: [...coverageByCity.values()],
       performance: summarizeRunPerformance(coverage),
-      userFeedback: await summarizeLeadFeedback(input.countryPreset.name, 'INSTAGRAM'),
+      userFeedback: await summarizeLeadFeedback(input.countryPreset.name, instagramSourceTypes),
     };
 
     try {

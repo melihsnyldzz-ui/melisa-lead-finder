@@ -309,6 +309,75 @@ export function isClearlyOutsideBabyKidsClothingTarget(lead) {
   return (hasUnrelatedType || hasUnrelatedTerm) && !hasTargetContext;
 }
 
+export function analyzeInstagramLeadQuality(lead) {
+  const resultText = buildResultText(lead);
+  const isTarget = isBabyKidsClothingLead(lead);
+  const hasAudienceSignal = includesAny(resultText, AUDIENCE_TERMS)
+    || includesAny(resultText, CHILDREN_CLOTHING_BRAND_TERMS);
+  const hasClothingSignal = includesAny(resultText, CLOTHING_TERMS)
+    || includesAny(resultText, STRONG_CLOTHING_PHRASES)
+    || (lead.types || []).includes('clothing_store');
+  const hasSalesSignal = includesAny(resultText, SALES_READY_TERMS);
+  const hasLowIntentSignal = includesAny(resultText, LOW_INTENT_PROFILE_TERMS);
+  const hasUnrelatedSignal = includesAny(resultText, UNRELATED_TERMS)
+    || (lead.types || []).some((type) => UNRELATED_TYPES.includes(type));
+  const hasContactSignal = Boolean(lead.phone || lead.internationalPhoneNumber || lead.whatsapp || lead.email || lead.website || lead.instagram);
+  const followers = Number(lead.rawPayload?.followers || 0);
+
+  let qualityScore = 0;
+  const positiveSignals = [];
+  const rejectionSignals = [];
+
+  if (isTarget) {
+    qualityScore += 45;
+    positiveSignals.push('baby/kids clothing target');
+  }
+  if (hasAudienceSignal) {
+    qualityScore += 12;
+    positiveSignals.push('baby/kids audience signal');
+  }
+  if (hasClothingSignal) {
+    qualityScore += 12;
+    positiveSignals.push('clothing/shop signal');
+  }
+  if (hasSalesSignal) {
+    qualityScore += 16;
+    positiveSignals.push('sales/order signal');
+  }
+  if (hasContactSignal) {
+    qualityScore += 8;
+    positiveSignals.push('contact/profile signal');
+  }
+  if (followers >= 5000) {
+    qualityScore += 7;
+    positiveSignals.push('audience size signal');
+  }
+  if (hasUnrelatedSignal && !isTarget) {
+    qualityScore -= 35;
+    rejectionSignals.push('unrelated product/category signal');
+  }
+  if (hasLowIntentSignal && !hasSalesSignal) {
+    qualityScore -= 25;
+    rejectionSignals.push('low-intent influencer/personal signal');
+  }
+  if (!hasAudienceSignal) rejectionSignals.push('missing baby/kids signal');
+  if (!hasClothingSignal) rejectionSignals.push('missing clothing/shop signal');
+
+  const normalizedScore = Math.max(0, Math.min(100, qualityScore));
+  const accepted = isTarget && normalizedScore >= 45 && !(hasLowIntentSignal && !hasSalesSignal);
+
+  return {
+    accepted,
+    qualityScore: normalizedScore,
+    qualityLabel: normalizedScore >= 75 ? 'strong' : normalizedScore >= 55 ? 'good' : normalizedScore >= 40 ? 'review' : 'weak',
+    positiveSignals,
+    rejectionSignals,
+    reason: accepted
+      ? positiveSignals.slice(0, 3).join('; ')
+      : rejectionSignals.slice(0, 3).join('; ') || 'weak Instagram customer signal',
+  };
+}
+
 export function scoreLead(lead) {
   const reasons = [];
   let score = 0;

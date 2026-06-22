@@ -1130,8 +1130,15 @@ function clampProcessStrategy(value) {
 }
 
 export function buildFallbackProcessStrategy({ countryPreset = {}, stats = {}, googleCoverage = [], instagramCoverage = [], feedback = {} } = {}) {
-  const googleRuns = googleCoverage.reduce((sum, item) => sum + (item.totalRuns || 0), 0);
-  const instagramRuns = instagramCoverage.reduce((sum, item) => sum + (item.totalRuns || 0), 0);
+  const countCoverageRuns = (coverage) => {
+    if (Array.isArray(coverage)) return coverage.reduce((sum, item) => sum + (item.totalRuns || 0), 0);
+    return [
+      ...(coverage?.bestCities || []),
+      ...(coverage?.weakCities || []),
+    ].reduce((sum, item) => sum + (item.totalRuns || 0), 0);
+  };
+  const googleRuns = countCoverageRuns(googleCoverage);
+  const instagramRuns = countCoverageRuns(instagramCoverage);
   const countryName = countryPreset?.name || 'Secili ulke';
   const firstCity = countryPreset?.cities?.[0] || 'ilk uygun sehir';
   const languageHints = countryPreset?.languageHints || {};

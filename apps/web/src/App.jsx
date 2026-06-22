@@ -26,6 +26,9 @@ const sourceTypeLabels = {
   DEMO: 'Demo',
   GOOGLE_PLACES: 'Google Magaza Bul',
   INSTAGRAM: 'Instagram Musteri Bul',
+  INSTAGRAM_APIFY: 'Instagram Apify',
+  APIFY: 'Apify',
+  MANUAL: 'Manuel',
 };
 
 const taskStatusLabels = {
@@ -43,6 +46,20 @@ const runResultStatusLabels = {
   filtered_out: 'Hedef disi',
   candidate: 'Aday',
   found: 'Bulundu',
+};
+
+const summarySourceLabels = {
+  live: 'Canli arama',
+  persisted: 'Kayitli arama',
+  cache: 'Yerel kayit',
+  estimated: 'Arsivden tahmin',
+};
+
+const runResultFilterLabels = {
+  all: 'Hepsi',
+  inserted: 'Yeni eklenen',
+  duplicate: 'Tekrar',
+  filtered_out: 'Hedef disi',
 };
 
 const keywordGroups = {
@@ -166,6 +183,8 @@ const instagramDefaults = {
 const runSummaryCacheKey = 'melisaLeadFinder.runSummaries.v1';
 
 function makeRunCacheKey(run) {
+  if (run.id) return `run:${run.id}`;
+  if (run.taskId && run.ranAt) return `task-run:${run.taskId}:${run.ranAt}`;
   return [run.country, run.city || '', run.sourceType, run.query].join('|').toLowerCase();
 }
 
@@ -180,10 +199,14 @@ function readRunSummaryCache() {
 function writeRunSummaryCache(summary) {
   try {
     const cache = readRunSummaryCache();
-    cache[makeRunCacheKey(summary)] = {
+    const cachedSummary = {
       ...summary,
       cachedAt: new Date().toISOString(),
     };
+    cache[makeRunCacheKey(summary)] = cachedSummary;
+    if (summary.country && summary.sourceType && summary.query) {
+      cache[[summary.country, summary.city || '', summary.sourceType, summary.query].join('|').toLowerCase()] = cachedSummary;
+    }
     const entries = Object.entries(cache).slice(-40);
     window.localStorage.setItem(runSummaryCacheKey, JSON.stringify(Object.fromEntries(entries)));
   } catch {
@@ -292,7 +315,7 @@ export default function App() {
   const [companyProfile, setCompanyProfile] = useState(null);
   const [activeView, setActiveView] = useState('leads');
   const [selectedLead, setSelectedLead] = useState(null);
-  const [filters, setFilters] = useState({ country: '', city: '', minScore: '', q: '', status: '' });
+  const [filters, setFilters] = useState({ country: '', city: '', minScore: '', q: '', status: '', sourceTypes: '' });
   const [taskForm, setTaskForm] = useState(pilotDefaults);
   const [instagramForm, setInstagramForm] = useState(instagramDefaults);
   const [instagramLeads, setInstagramLeads] = useState([]);
@@ -303,6 +326,8 @@ export default function App() {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [isRunningInstagramSearch, setIsRunningInstagramSearch] = useState(false);
   const [instagramRunStatus, setInstagramRunStatus] = useState('');
+  const [possibleMatches, setPossibleMatches] = useState([]);
+  const [isLoadingPossibleMatches, setIsLoadingPossibleMatches] = useState(false);
   const [isSavingCompanyProfile, setIsSavingCompanyProfile] = useState(false);
   const [isTestingGemini, setIsTestingGemini] = useState(false);
   const [geminiTest, setGeminiTest] = useState(null);
@@ -313,9 +338,12 @@ export default function App() {
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
   const [lastRunSummary, setLastRunSummary] = useState(null);
+  const [runResultFilter, setRunResultFilter] = useState('all');
+  const [instagramRunResultFilter, setInstagramRunResultFilter] = useState('all');
   const [selectedPresetCode, setSelectedPresetCode] = useState('RO');
   const [aiSearchPlan, setAiSearchPlan] = useState(null);
   const [aiProcessStrategy, setAiProcessStrategy] = useState(null);
+  const [aiLearningSummary, setAiLearningSummary] = useState(null);
   const [isPlanningSearch, setIsPlanningSearch] = useState(false);
   const [isLoadingProcessStrategy, setIsLoadingProcessStrategy] = useState(false);
   const [searchHistory, setSearchHistory] = useState(null);
@@ -348,11 +376,16 @@ export default function App() {
     }
     return [...byKey.values()];
   }, [instagramSummary]);
+  const filteredInstagramRunResults = useMemo(() => {
+    if (instagramRunResultFilter === 'all') return instagramRunResults;
+    return instagramRunResults.filter((result) => result.status === instagramRunResultFilter);
+  }, [instagramRunResultFilter, instagramRunResults]);
   const selectedPreset = useMemo(
     () => balkanCountryPresets.find((preset) => preset.code === selectedPresetCode),
     [selectedPresetCode],
   );
   const selectedMarketProfile = selectedPreset ? countryMarketProfiles[selectedPreset.code] : null;
+  const activeLearningSnapshot = aiProcessStrategy?.learningSnapshot || aiLearningSummary?.snapshot || null;
   const selectedSearchProfile = useMemo(
     () => getCountrySearchProfile(selectedPreset),
     [selectedPreset],
@@ -377,6 +410,14 @@ export default function App() {
   const currentFilterQuery = useMemo(() => (
     new URLSearchParams(Object.entries(filters).filter(([, value]) => value !== '')).toString()
   ), [filters]);
+  const activeLeadFilters = useMemo(() => ([
+    filters.q ? { key: 'q', label: `Arama: ${filters.q}` } : null,
+    filters.country ? { key: 'country', label: `Ulke: ${filters.country}`, clear: { country: '', city: '' } } : null,
+    filters.city ? { key: 'city', label: `Sehir: ${filters.city}` } : null,
+    filters.minScore ? { key: 'minScore', label: `Skor: ${filters.minScore}+` } : null,
+    filters.sourceTypes ? { key: 'sourceTypes', label: `Kaynak: ${filters.sourceTypes.includes('INSTAGRAM') ? 'Instagram musterileri' : sourceTypeLabels[filters.sourceTypes] || filters.sourceTypes}` } : null,
+    filters.status ? { key: 'status', label: `Durum: ${statusLabels[filters.status] || filters.status}` } : null,
+  ].filter(Boolean)), [filters]);
   const coverageByCountry = useMemo(() => coverage.reduce((acc, item) => {
     acc[item.country] = item;
     return acc;
@@ -401,8 +442,8 @@ export default function App() {
         ? 'Tum lead havuzunu filtrele, detaylarini incele ve Gemini icin begeni verisi topla.'
         : 'Google ile fiziksel bebek/cocuk giyim magazalarini, butiklerini ve potansiyel toptan alicilari bul.';
 
-  async function refresh() {
-    const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value !== '')).toString();
+  async function refresh(nextFilters = filters) {
+    const query = new URLSearchParams(Object.entries(nextFilters).filter(([, value]) => value !== '')).toString();
     const [leadsData, statsData, tasksData, historyData, coverageData, safetyData] = await Promise.all([
       apiGet(`/leads${query ? `?${query}` : ''}`),
       apiGet('/leads/stats'),
@@ -422,7 +463,7 @@ export default function App() {
 
   async function refreshInstagramLeads() {
     const params = new URLSearchParams({
-      sourceType: 'INSTAGRAM',
+      sourceTypes: 'INSTAGRAM,INSTAGRAM_APIFY,APIFY',
       ...(instagramForm.country ? { country: instagramForm.country } : {}),
       ...(instagramForm.city ? { city: instagramForm.city } : {}),
     }).toString();
@@ -437,6 +478,7 @@ export default function App() {
       refreshInstagramLeads(),
       apiGet('/providers').then(setProviders),
       apiGet('/ai/company-profile').then(setCompanyProfile),
+      loadAiLearningSummary(selectedPreset?.name),
     ])
       .catch((err) => setError(getErrorMessage(err)))
       .finally(() => setIsLoading(false));
@@ -502,6 +544,7 @@ export default function App() {
     const map = leafletMapRef.current;
     if (!map || !selectedPreset?.coordinates) return;
     map.flyTo(selectedPreset.coordinates, Math.max(map.getZoom(), 6), { duration: 0.45 });
+    loadAiLearningSummary(selectedPreset.name).catch(() => null);
   }, [selectedPresetCode]);
 
   useEffect(() => {
@@ -616,9 +659,75 @@ export default function App() {
         priority: 'high',
         reason: 'Formdaki manuel Instagram sorgusu.',
       }];
+    const seen = new Set();
     return plannedQueries
-      .filter((item) => item.query && ['user', 'place'].includes(item.searchType || 'user'))
-      .slice(0, 6);
+      .map((item) => ({
+        ...item,
+        query: String(item.query || '').trim(),
+        searchType: ['user', 'place'].includes(item.searchType || 'user') ? item.searchType || 'user' : 'user',
+      }))
+      .filter((item) => {
+        if (!item.query) return false;
+        const key = `${item.searchType}:${item.query.toLowerCase()}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, plan?.maxQueries || 10);
+  }
+
+  function updateInstagramPlanQuery(index, patch) {
+    setInstagramAiPlan((current) => {
+      if (!current?.searchQueries) return current;
+      const searchQueries = current.searchQueries.map((item, itemIndex) => (
+        itemIndex === index ? { ...item, ...patch } : item
+      ));
+      return { ...current, searchQueries };
+    });
+  }
+
+  function removeInstagramPlanQuery(index) {
+    setInstagramAiPlan((current) => {
+      if (!current?.searchQueries) return current;
+      const searchQueries = current.searchQueries.filter((_, itemIndex) => itemIndex !== index);
+      return { ...current, searchQueries };
+    });
+  }
+
+  function addInstagramPlanQuery() {
+    setInstagramAiPlan((current) => {
+      const fallbackPlan = current || {
+        provider: 'MANUAL',
+        summary: 'Manuel Instagram arama plani',
+        audienceDefinition: 'Bebek/cocuk giyim odakli Instagram profil aramasi.',
+        searchQueries: [],
+        maxResultsPerQuery: Number(instagramForm.maxResults || 5),
+        confidence: 0.5,
+      };
+      const nextQuery = instagramForm.query || `${instagramForm.sourceKeyword || 'bebek giyim'} ${instagramForm.city || ''}`.trim();
+      return {
+        ...fallbackPlan,
+        searchQueries: [
+          ...(fallbackPlan.searchQueries || []),
+          {
+            query: nextQuery,
+            searchType: 'user',
+            priority: 'medium',
+            intent: 'manual_profile_discovery',
+            reason: 'Kullanici tarafindan plana eklendi.',
+          },
+        ],
+      };
+    });
+  }
+
+  function selectInstagramPlanQuery(item) {
+    setInstagramForm((current) => ({
+      ...current,
+      sourceKeyword: `${item.searchType || 'user'}: ${item.query}`,
+      query: item.query,
+      maxResults: instagramAiPlan?.maxResultsPerQuery || current.maxResults,
+    }));
   }
 
   async function runInstagramPanelSearch(event) {
@@ -626,6 +735,7 @@ export default function App() {
     setError(null);
     setMessage(null);
     setInstagramSummary(null);
+    setInstagramRunResultFilter('all');
     setIsRunningInstagramSearch(true);
     setInstagramRunStatus('Instagram arama plani hazirlaniyor...');
     const controller = new AbortController();
@@ -634,6 +744,10 @@ export default function App() {
       const activePlan = instagramAiPlan || await loadInstagramAiPlan();
       if (!activePlan) return;
       const queries = getInstagramPlanQueries(activePlan);
+      if (!queries.length) {
+        setError('Calistirilacak Instagram sorgusu kalmadi. Yeni plan olustur veya manuel sorgu ekle.');
+        return;
+      }
       const summaries = [];
       for (const [index, item] of queries.entries()) {
         if (controller.signal.aborted) break;
@@ -646,13 +760,14 @@ export default function App() {
           keywordGroup: 'instagram baby/kids retail',
           sourceKeyword: `${item.searchType || 'user'}: ${item.query}`,
           query: item.query,
-          sourceType: 'INSTAGRAM',
+          sourceType: 'INSTAGRAM_APIFY',
           maxResults: Number(activePlan?.maxResultsPerQuery || instagramForm.maxResults),
           allowDuplicate: true,
         }, { signal: controller.signal, timeoutMs: 30000 });
         const runSummary = await apiPost(`/search-tasks/${created.id}/run`, {}, { signal: controller.signal, timeoutMs: 75000 });
-        writeRunSummaryCache(runSummary);
-        summaries.push(runSummary);
+        const liveRunSummary = { ...runSummary, summarySource: 'live' };
+        writeRunSummaryCache(liveRunSummary);
+        summaries.push(liveRunSummary);
       }
       const summary = summaries.reduce((acc, item) => ({
         foundCount: acc.foundCount + (item.foundCount || 0),
@@ -662,8 +777,8 @@ export default function App() {
         searchedResults: [...(acc.searchedResults || []), ...(item.searchedResults || [])].slice(0, 80),
         bestLeads: [...(acc.bestLeads || []), ...(item.bestLeads || [])].sort((a, b) => b.leadScore - a.leadScore).slice(0, 8),
       }), { foundCount: 0, createdCount: 0, duplicateCount: 0, errorCount: 0, searchedResults: [], bestLeads: [] });
-      setInstagramSummary({ ...summary, ranQueries: queries });
-      await Promise.all([refresh(), refreshInstagramLeads()]);
+      setInstagramSummary({ ...summary, ranQueries: queries, summarySource: 'live' });
+      await Promise.all([refresh(), refreshInstagramLeads(), loadAiLearningSummary(instagramForm.country)]);
       setMessage(`${queries.length} Instagram sorgusu calisti, ${summary.foundCount || 0} profil bulundu, ${summary.createdCount || 0} yeni lead eklendi`);
     } catch (err) {
       setError(getErrorMessage(err));
@@ -747,6 +862,14 @@ export default function App() {
     }
   }
 
+  async function loadAiLearningSummary(country = selectedPreset?.name || taskForm.country) {
+    if (!country) return null;
+    const params = new URLSearchParams({ country }).toString();
+    const summary = await apiGet(`/ai/learning-summary?${params}`);
+    setAiLearningSummary(summary);
+    return summary;
+  }
+
   function applyCountryPreset(preset) {
     const city = preset.cities[0];
     const sourceKeyword = preset.queries[0];
@@ -800,7 +923,10 @@ export default function App() {
     setIsCreatingTask(true);
     try {
       await apiPost('/search-tasks', getAutomaticTaskPayload({ allowDuplicate }));
-      await refresh();
+      await Promise.all([
+        refresh(),
+        loadAiLearningSummary(task.country || selectedPreset?.name || taskForm.country),
+      ]);
       setMessage('Arama görevi oluşturuldu');
     } catch (err) {
       setError(getErrorMessage(err));
@@ -813,11 +939,13 @@ export default function App() {
     setError(null);
     setMessage(null);
     setLastRunSummary(null);
+    setRunResultFilter('all');
     setRunningTaskId(id);
     try {
       const task = await apiPost(`/search-tasks/${id}/run`, {});
-      setLastRunSummary(task);
-      writeRunSummaryCache(task);
+      const liveSummary = { ...task, summarySource: 'live' };
+      setLastRunSummary(liveSummary);
+      writeRunSummaryCache(liveSummary);
       await refresh();
       setMessage(`${task.foundCount || 0} sonuç bulundu, ${task.createdCount || 0} yeni lead eklendi, ${task.duplicateCount || 0} tekrar atlandı`);
     } catch (err) {
@@ -874,9 +1002,10 @@ export default function App() {
         userFeedback,
         userFeedbackAt: userFeedback === 'NONE' ? null : new Date().toISOString(),
       });
-      setSelectedLead((current) => (current?.id === updated.id ? updated : current));
+    setSelectedLead((current) => (current?.id === updated.id ? updated : current));
       setLeads((current) => current.map((lead) => (lead.id === updated.id ? updated : lead)));
       setInstagramLeads((current) => current.map((lead) => (lead.id === updated.id ? updated : lead)));
+      loadAiLearningSummary(updated.country).catch(() => null);
       setMessage(`Lead geri bildirimi kaydedildi: ${feedbackLabels[userFeedback]}`);
     } catch (err) {
       setError(getErrorMessage(err));
@@ -968,7 +1097,7 @@ export default function App() {
     setMessage(null);
     setIsLoading(true);
     try {
-      await refresh();
+      await refresh(filters);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -977,26 +1106,13 @@ export default function App() {
   }
 
   async function clearFilters() {
-    setFilters({ country: '', city: '', minScore: '', q: '', status: '' });
+    const emptyFilters = { country: '', city: '', minScore: '', q: '', status: '', sourceTypes: '' };
+    setFilters(emptyFilters);
     setError(null);
     setMessage(null);
     setIsLoading(true);
     try {
-      const [leadsData, statsData, tasksData, historyData, coverageData, safetyData] = await Promise.all([
-        apiGet('/leads'),
-        apiGet('/leads/stats'),
-        apiGet('/search-tasks'),
-        apiGet('/search-tasks/history?take=15'),
-        apiGet('/search-tasks/coverage?sourceType=GOOGLE_PLACES'),
-        apiGet('/search-tasks/safety'),
-      ]);
-      setLeads(leadsData);
-      setStats(statsData);
-      setTasks(tasksData);
-      setRunHistory(historyData);
-      setCoverage(coverageData);
-      setSafety(safetyData);
-      setSelectedLead(leadsData[0] || null);
+      await refresh(emptyFilters);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -1006,22 +1122,62 @@ export default function App() {
 
   function setCountryFilter(country) {
     const preset = balkanCountryPresets.find((item) => item.name === country);
-    setFilters({
+    applyLeadFilterPatch({
       ...filters,
       country,
       city: preset?.cities.includes(filters.city) ? filters.city : '',
     });
   }
 
+  function applyLeadFilterPatch(nextFilters) {
+    setFilters(nextFilters);
+    setIsLoading(true);
+    refresh(nextFilters)
+      .catch((err) => setError(getErrorMessage(err)))
+      .finally(() => setIsLoading(false));
+  }
+
   function showHotLeads() {
-    setFilters({ ...filters, minScore: '80', status: '' });
+    applyLeadFilterPatch({ ...filters, minScore: '80', status: '' });
+  }
+
+  function clearLeadFilter(filter) {
+    const nextFilters = {
+      ...filters,
+      ...(filter.clear || { [filter.key]: '' }),
+    };
+    applyLeadFilterPatch(nextFilters);
   }
 
   function selectRunResult(result) {
     if (!result?.id) return;
     const lead = leads.find((item) => item.id === result.id);
-    setSelectedLead(lead || result);
+    selectLead(lead || result);
     setActiveView('allLeads');
+  }
+
+  async function selectLead(lead) {
+    if (!lead?.id) {
+      setSelectedLead(lead || null);
+      setPossibleMatches([]);
+      return;
+    }
+    setSelectedLead(lead);
+    setPossibleMatches([]);
+    setIsLoadingPossibleMatches(true);
+    try {
+      const [detail, matches] = await Promise.all([
+        apiGet(`/leads/${lead.id}`),
+        apiGet(`/leads/${lead.id}/possible-matches`),
+      ]);
+      setSelectedLead(detail);
+      setPossibleMatches(matches);
+    } catch {
+      setSelectedLead(lead);
+      setPossibleMatches([]);
+    } finally {
+      setIsLoadingPossibleMatches(false);
+    }
   }
 
   function compactLeadForRunView(lead, status = 'found') {
@@ -1045,13 +1201,56 @@ export default function App() {
     };
   }
 
+  function getRunResultsByFilter(summary) {
+    const results = summary?.searchedResults || [];
+    if (runResultFilter === 'all') return results;
+    return results.filter((result) => result.status === runResultFilter);
+  }
+
+  function countRunResultsByStatus(summary, status) {
+    const results = summary?.searchedResults || [];
+    if (status === 'all') return results.length;
+    return results.filter((result) => result.status === status).length;
+  }
+
+  function countResultsByStatus(results, status) {
+    if (status === 'all') return results.length;
+    return results.filter((result) => result.status === status).length;
+  }
+
   async function showRunSummary(run) {
     setError(null);
     setMessage(null);
+    setRunResultFilter('all');
     try {
+      const persistedResults = Array.isArray(run.searchedResults) ? run.searchedResults : [];
+      if (persistedResults.length > 0) {
+        const summary = {
+          ...run,
+          summarySource: 'persisted',
+          createdCount: run.createdCount || 0,
+          targetFilteredCount: run.targetFilteredCount || 0,
+          searchedResults: persistedResults,
+          bestLeads: Array.isArray(run.bestLeads) ? run.bestLeads : persistedResults
+            .filter((lead) => lead.id && lead.leadScore)
+            .sort((a, b) => b.leadScore - a.leadScore)
+            .slice(0, 5),
+          historyNote: null,
+        };
+        setLastRunSummary(summary);
+        writeRunSummaryCache(summary);
+        setFilters((current) => ({
+          ...current,
+          country: run.country,
+          city: run.city || '',
+        }));
+        setMessage(`${run.country} ${run.city || ''} aramasinin kendi sonuc listesi acildi`);
+        return;
+      }
+
       const cachedSummary = readRunSummaryCache()[makeRunCacheKey(run)];
       if (cachedSummary) {
-        setLastRunSummary(cachedSummary);
+        setLastRunSummary({ ...cachedSummary, summarySource: cachedSummary.summarySource || 'cache' });
         setFilters((current) => ({
           ...current,
           country: run.country,
@@ -1072,11 +1271,12 @@ export default function App() {
         .sort((a, b) => b.leadScore - a.leadScore);
       setLastRunSummary({
         ...run,
+        summarySource: 'estimated',
         createdCount: run.createdCount || 0,
         searchedResults: relatedLeads.slice(0, 100).map((lead) => compactLeadForRunView(lead)),
         bestLeads: relatedLeads.slice(0, 5),
         historyNote: relatedLeads.length
-          ? null
+          ? 'Bu eski kosunun tam sonuc listesi kayitli degildi; liste arama kriterlerinden arsiv uzerinden yeniden olusturuldu.'
           : 'Bu eski aramanin detay listesi kayitli degil; bu tarihten sonraki aramalar tam ozetiyle saklanacak.',
       });
       setFilters((current) => ({
@@ -1093,6 +1293,7 @@ export default function App() {
   async function showTaskSummary(task) {
     setError(null);
     setMessage(null);
+    setRunResultFilter('all');
     try {
       const params = new URLSearchParams({
         country: task.country,
@@ -1102,6 +1303,7 @@ export default function App() {
       const searchedResults = taskLeads.slice(0, 100).map((lead) => compactLeadForRunView(lead));
       setLastRunSummary({
         ...task,
+        summarySource: 'estimated',
         createdCount: task.insertedCount || 0,
         searchedResults,
         bestLeads: taskLeads.slice(0, 5),
@@ -1165,6 +1367,27 @@ export default function App() {
           </div>
         </section>
 
+        {activeLearningSnapshot && (
+          <section className="panel learning-status-panel">
+            <div>
+              <strong>AI Ogrenme Durumu</strong>
+              <span>{activeLearningSnapshot.totalFeedback || 0} begeni verisi ile {selectedPreset?.name || taskForm.country} planini iyilestiriyor</span>
+            </div>
+            <div className="learning-status-chips">
+              {(activeLearningSnapshot.likedSignals?.terms || []).slice(0, 4).map((item) => (
+                <span key={`learn-term-${item.name}`}>{item.name} ({item.count})</span>
+              ))}
+              {(activeLearningSnapshot.google?.bestCities || []).slice(0, 2).map((city) => (
+                <span key={`learn-google-city-${city}`}>Google: {city}</span>
+              ))}
+              {(activeLearningSnapshot.instagram?.bestKeywords || []).slice(0, 2).map((keyword) => (
+                <span key={`learn-instagram-keyword-${keyword}`}>Instagram: {keyword}</span>
+              ))}
+              {!activeLearningSnapshot.totalFeedback && <span>Lead begenmeye basladikca burada sinyaller olusur</span>}
+            </div>
+          </section>
+        )}
+
         {aiProcessStrategy && (
           <section className={`panel process-strategy-panel ${aiProcessStrategy.provider === 'GEMINI' ? 'gemini-source' : ''}`}>
             <div className="panel-header">
@@ -1191,6 +1414,31 @@ export default function App() {
               <ReportList title="Toplanacak Veri" items={aiProcessStrategy.dataToCollect} />
               <ReportList title="Basari Olcutu" items={aiProcessStrategy.successMetrics} />
             </div>
+            {activeLearningSnapshot && (
+              <div className="ai-learning-snapshot">
+                <div>
+                  <strong>AI Ogrenme Verisi</strong>
+                  <span>{activeLearningSnapshot.totalFeedback || 0} begeni verisi</span>
+                </div>
+                <div>
+                  <strong>Begenilen Sinyaller</strong>
+                  {(activeLearningSnapshot.likedSignals?.terms || []).slice(0, 5).map((item) => (
+                    <span key={`liked-${item.name}`}>{item.name} ({item.count})</span>
+                  ))}
+                  {!(activeLearningSnapshot.likedSignals?.terms || []).length && <span>Henuz yeterli begeni sinyali yok</span>}
+                </div>
+                <div>
+                  <strong>Google En Iyi</strong>
+                  {(activeLearningSnapshot.google?.bestCities || []).slice(0, 4).map((city) => <span key={`g-city-${city}`}>{city}</span>)}
+                  {(activeLearningSnapshot.google?.bestKeywords || []).slice(0, 4).map((keyword) => <span key={`g-key-${keyword}`}>{keyword}</span>)}
+                </div>
+                <div>
+                  <strong>Instagram En Iyi</strong>
+                  {(activeLearningSnapshot.instagram?.bestCities || []).slice(0, 4).map((city) => <span key={`i-city-${city}`}>{city}</span>)}
+                  {(activeLearningSnapshot.instagram?.bestKeywords || []).slice(0, 4).map((keyword) => <span key={`i-key-${keyword}`}>{keyword}</span>)}
+                </div>
+              </div>
+            )}
           </section>
         )}
 
@@ -1414,7 +1662,14 @@ export default function App() {
           </form>
 
           <div className="run-summary-panel">
-            <div className="panel-header"><h2>Çalışma Özeti</h2></div>
+            <div className="panel-header">
+              <h2>Çalışma Özeti</h2>
+              {lastRunSummary?.summarySource && (
+                <span className={`summary-source summary-source-${lastRunSummary.summarySource}`}>
+                  {summarySourceLabels[lastRunSummary.summarySource] || 'Ozet'}
+                </span>
+              )}
+            </div>
             {lastRunSummary ? (
               <div className="summary-grid">
                 <Kpi title="Bulunan Sonuç" value={lastRunSummary.foundCount || 0} />
@@ -1431,10 +1686,26 @@ export default function App() {
                   <div className="searched-results-box">
                     <div className="searched-results-header">
                       <strong>Arananlar</strong>
-                      <span>{lastRunSummary.searchedResults.length} sonuc</span>
+                      <span>{getRunResultsByFilter(lastRunSummary).length} / {lastRunSummary.searchedResults.length} sonuc</span>
+                    </div>
+                    <div className="run-result-filter-row">
+                      {Object.entries(runResultFilterLabels).map(([value, label]) => (
+                        <button
+                          className={runResultFilter === value ? 'active' : ''}
+                          key={value}
+                          onClick={() => setRunResultFilter(value)}
+                          type="button"
+                        >
+                          {label}
+                          <em>{countRunResultsByStatus(lastRunSummary, value)}</em>
+                        </button>
+                      ))}
                     </div>
                     <div className="searched-results-list">
-                      {lastRunSummary.searchedResults.map((result) => (
+                      {getRunResultsByFilter(lastRunSummary).length === 0 && (
+                        <div className="empty-state compact-empty">Bu filtrede sonuc yok.</div>
+                      )}
+                      {getRunResultsByFilter(lastRunSummary).map((result) => (
                         <button
                           className={`searched-result-row searched-${result.status}`}
                           disabled={!result.id}
@@ -1445,8 +1716,12 @@ export default function App() {
                           <span>
                             <strong>{result.companyName}</strong>
                             <small>{result.city || result.country} - {result.sourceKeyword || result.sourceQuery}</small>
+                            {result.reason && <small>{result.reason}</small>}
                           </span>
-                          <em>{runResultStatusLabels[result.status] || result.status}</em>
+                          <em>
+                            {result.qualityScore ? `Kalite ${result.qualityScore}` : runResultStatusLabels[result.status] || result.status}
+                            {result.qualityLabel ? ` - ${result.qualityLabel}` : ''}
+                          </em>
                         </button>
                       ))}
                     </div>
@@ -1524,20 +1799,27 @@ export default function App() {
                 {balkanCountryPresets.map((preset) => <option key={preset.code} value={preset.name}>{preset.name}</option>)}
               </select>
               {selectedFilterPreset ? (
-                <select value={filters.city} onChange={(e) => setFilters({ ...filters, city: e.target.value })}>
+                <select value={filters.city} onChange={(e) => applyLeadFilterPatch({ ...filters, city: e.target.value })}>
                   <option value="">Tüm şehirler</option>
                   {selectedFilterPreset.cities.map((city) => <option key={city} value={city}>{city}</option>)}
                 </select>
               ) : (
                 <input placeholder="Şehir" value={filters.city} onChange={(e) => setFilters({ ...filters, city: e.target.value })} />
               )}
-              <select value={filters.minScore} onChange={(e) => setFilters({ ...filters, minScore: e.target.value })}>
+              <select value={filters.minScore} onChange={(e) => applyLeadFilterPatch({ ...filters, minScore: e.target.value })}>
                 <option value="">Tüm skorlar</option>
                 <option value="80">80+ Sıcak</option>
                 <option value="60">60+ Uygun</option>
                 <option value="40">40+ İnceleme</option>
               </select>
-              <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
+              <select value={filters.sourceTypes} onChange={(e) => applyLeadFilterPatch({ ...filters, sourceTypes: e.target.value })}>
+                <option value="">Tum kaynaklar</option>
+                <option value="GOOGLE_PLACES">Google magazalari</option>
+                <option value="INSTAGRAM,INSTAGRAM_APIFY,APIFY">Instagram musterileri</option>
+                <option value="DEMO">Demo</option>
+                <option value="MANUAL">Manuel</option>
+              </select>
+              <select value={filters.status} onChange={(e) => applyLeadFilterPatch({ ...filters, status: e.target.value })}>
                 <option value="">Tüm durumlar</option>
                 {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
@@ -1545,6 +1827,16 @@ export default function App() {
               <button type="button" className="secondary-button" onClick={showHotLeads} disabled={isLoading}>Sıcaklar</button>
               <button type="button" className="secondary-button" onClick={clearFilters} disabled={isLoading}>Temizle</button>
             </div>
+            {activeLeadFilters.length > 0 && (
+              <div className="active-filter-row">
+                {activeLeadFilters.map((filter) => (
+                  <button key={filter.key} onClick={() => clearLeadFilter(filter)} type="button">
+                    {filter.label}
+                    <span>Kaldir</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="lead-table">
               {isLoading && <div className="empty-state">Lead listesi yükleniyor.</div>}
               {!isLoading && leads.length === 0 && <div className="empty-state">Bu filtrelerle lead bulunamadı.</div>}
@@ -1552,9 +1844,9 @@ export default function App() {
                 <div
                   className={`lead-row ${selectedLead?.id === lead.id ? 'selected' : ''}`}
                   key={lead.id}
-                  onClick={() => setSelectedLead(lead)}
+                  onClick={() => selectLead(lead)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') setSelectedLead(lead);
+                    if (event.key === 'Enter' || event.key === ' ') selectLead(lead);
                   }}
                   role="button"
                   tabIndex={0}
@@ -1562,7 +1854,12 @@ export default function App() {
                   <strong className={lead.leadScore >= 80 ? 'score hot' : 'score'}>{lead.leadScore}</strong>
                   <span className="lead-main">
                     <strong>{lead.companyName}</strong>
-                    <small>{lead.country} {lead.city ? `- ${lead.city}` : ''}</small>
+                    <small>
+                      <span className={`lead-source-pill source-${lead.sourceType || 'UNKNOWN'}`}>
+                        {sourceTypeLabels[lead.sourceType] || lead.sourceType || 'Kaynak'}
+                      </span>
+                      {lead.country} {lead.city ? `- ${lead.city}` : ''}
+                    </small>
                   </span>
                   <span className="lead-badges" aria-label="Lead iletişim alanları">
                     {(lead.internationalPhoneNumber || lead.phone) && <small>Tel</small>}
@@ -1681,6 +1978,62 @@ export default function App() {
                   <dt>Durum</dt><dd>{selectedLead.businessStatus || '-'}</dd>
                   <dt>Skor Sebebi</dt><dd>{selectedLead.scoreReason || '-'}</dd>
                 </dl>
+                {(selectedLead.sources?.length || selectedLead.instagramProfiles?.length || selectedLead.activities?.length) ? (
+                  <div className="lead-evidence-grid">
+                    <div>
+                      <strong>Kaynak Kayitlari</strong>
+                      {(selectedLead.sources || []).slice(0, 5).map((source) => (
+                        <span key={source.id}>
+                          <small>{sourceTypeLabels[source.sourceType] || source.sourceType}</small>
+                          <em>{source.sourceQuery || source.sourceName || '-'}</em>
+                        </span>
+                      ))}
+                      {!selectedLead.sources?.length && <p>Kaynak kaydi yok.</p>}
+                    </div>
+                    <div>
+                      <strong>Instagram Profili</strong>
+                      {(selectedLead.instagramProfiles || []).slice(0, 3).map((profile) => (
+                        <span key={profile.id}>
+                          <small>{profile.username ? `@${profile.username}` : profile.profileName || 'Profil'}</small>
+                          <em>{profile.followerCount ? `${profile.followerCount} takipci` : profile.bio || profile.profileUrl || '-'}</em>
+                        </span>
+                      ))}
+                      {!selectedLead.instagramProfiles?.length && <p>Instagram profil kaydi yok.</p>}
+                    </div>
+                    <div>
+                      <strong>Aktivite</strong>
+                      {(selectedLead.activities || []).slice(0, 4).map((activity) => (
+                        <span key={activity.id}>
+                          <small>{activity.activityType}</small>
+                          <em>{activity.content || activity.result || '-'}</em>
+                        </span>
+                      ))}
+                      {!selectedLead.activities?.length && <p>Aktivite yok.</p>}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="possible-match-box">
+                  <div className="possible-match-header">
+                    <strong>Olası Eşleşmeler</strong>
+                    <span>{isLoadingPossibleMatches ? 'Kontrol ediliyor' : `${possibleMatches.length} kayıt`}</span>
+                  </div>
+                  {possibleMatches.length > 0 ? (
+                    <div className="possible-match-list">
+                      {possibleMatches.map((match) => (
+                        <button className="possible-match-row" key={match.id} onClick={() => selectLead(match)} type="button">
+                          <span>
+                            <strong>{match.companyName}</strong>
+                            <small>{sourceTypeLabels[match.sourceType] || match.sourceType} · {match.country} {match.city ? `- ${match.city}` : ''}</small>
+                          </span>
+                          <em>{match.matchScore}/100</em>
+                          <small>{match.matchReasons?.join(', ') || 'Benzer kayıt sinyali'}</small>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="field-note">{isLoadingPossibleMatches ? 'Aynı müşteri olabilecek kayıtlar aranıyor.' : 'Bu lead için güçlü bir tekrar/eşleşme sinyali yok.'}</p>
+                  )}
+                </div>
                 <div className="action-row">
                   {['HOT', 'REVIEW', 'QUALIFIED', 'REJECTED', 'CONVERTED'].map((status) => (
                     <button disabled={!!updatingLeadStatus} key={status} onClick={() => updateLeadStatus(selectedLead.id, status)} type="button">
@@ -1801,22 +2154,48 @@ export default function App() {
                     </div>
                     <p>{instagramAiPlan.summary}</p>
                     <small>{instagramAiPlan.audienceDefinition}</small>
+                    <div className="instagram-plan-meta">
+                      <span>{instagramAiPlan.searchQueries?.length || 0} sorgu</span>
+                      <span>Sorgu basina {instagramAiPlan.maxResultsPerQuery || instagramForm.maxResults} profil</span>
+                      <span>Tahmini toplam {(instagramAiPlan.searchQueries?.length || 0) * Number(instagramAiPlan.maxResultsPerQuery || instagramForm.maxResults || 0)}</span>
+                      <span>{instagramAiPlan.languagePack?.languages?.join(', ') || selectedInstagramSearchProfile.languages.join(', ')}</span>
+                      <button className="mini-inline-button" onClick={addInstagramPlanQuery} type="button">Sorgu Ekle</button>
+                    </div>
                     <div className="instagram-query-list">
-                      {instagramAiPlan.searchQueries?.slice(0, 6).map((item) => (
-                        <button
-                          className={instagramForm.query === item.query ? 'selected' : ''}
+                      {instagramAiPlan.searchQueries?.length === 0 && (
+                        <div className="empty-state">Bu planda sorgu kalmadi. Sorgu Ekle ile manuel arama ekleyebilirsin.</div>
+                      )}
+                      {instagramAiPlan.searchQueries?.map((item, index) => (
+                        <div
+                          className={`instagram-query-row ${instagramForm.query === item.query ? 'selected' : ''}`}
                           key={`${item.searchType}-${item.query}`}
-                          onClick={() => setInstagramForm((current) => ({
-                            ...current,
-                            sourceKeyword: `${item.searchType}: ${item.query}`,
-                            query: item.query,
-                            maxResults: instagramAiPlan.maxResultsPerQuery || current.maxResults,
-                          }))}
-                          type="button"
                         >
-                          <strong>{item.query}</strong>
-                          <small>{item.searchType} - {item.priority} - {item.reason}</small>
-                        </button>
+                          <input
+                            aria-label="Instagram sorgusu"
+                            value={item.query}
+                            onChange={(e) => updateInstagramPlanQuery(index, { query: e.target.value })}
+                          />
+                          <select
+                            aria-label="Arama tipi"
+                            value={item.searchType || 'user'}
+                            onChange={(e) => updateInstagramPlanQuery(index, { searchType: e.target.value })}
+                          >
+                            <option value="user">user</option>
+                            <option value="place">place</option>
+                          </select>
+                          <select
+                            aria-label="Oncelik"
+                            value={item.priority || 'medium'}
+                            onChange={(e) => updateInstagramPlanQuery(index, { priority: e.target.value })}
+                          >
+                            <option value="high">high</option>
+                            <option value="medium">medium</option>
+                            <option value="low">low</option>
+                          </select>
+                          <button className="icon-text-button" onClick={() => selectInstagramPlanQuery(item)} type="button">Sec</button>
+                          <button className="icon-text-button danger-text" onClick={() => removeInstagramPlanQuery(index)} type="button">Sil</button>
+                          <small>{item.intent || item.reason || 'Instagram icinde hedef profil aramasi.'}</small>
+                        </div>
                       ))}
                     </div>
                     <div className="instagram-signal-grid">
@@ -1861,6 +2240,7 @@ export default function App() {
                     Sorgu
                     <input required value={instagramForm.query} onChange={(e) => setInstagramForm({ ...instagramForm, query: e.target.value })} />
                   </label>
+                  <button className="secondary-button" onClick={addInstagramPlanQuery} type="button">Manuel Sorguyu Plana Ekle</button>
                 </details>
                 <div className="instagram-search-actions">
                   <button className="secondary-button" disabled={isPlanningInstagramSearch || isRunningInstagramSearch} onClick={loadInstagramAiPlan} type="button">
@@ -1895,6 +2275,13 @@ export default function App() {
                     <span>Eklenen {instagramSummary.createdCount || 0}</span>
                     <span>Tekrar {instagramSummary.duplicateCount || 0}</span>
                     {instagramSummary.ranQueries?.length ? <span>Sorgu {instagramSummary.ranQueries.length}</span> : null}
+                    {instagramSummary.ranQueries?.length ? (
+                      <div className="ran-query-chips">
+                        {instagramSummary.ranQueries.slice(0, 8).map((item) => (
+                          <em key={`${item.searchType}-${item.query}`}>{item.query}</em>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ) : (
                   <p>Arama calistirinca bulunan profiller, eklenen leadler ve tekrarlar burada gorunur.</p>
@@ -1905,28 +2292,50 @@ export default function App() {
             <section className="panel wide-panel">
               <div className="panel-header">
                 <h2>Son Aramada Bulunanlar</h2>
-                <span>{instagramRunResults.length ? `${instagramRunResults.length} sonuc` : `${instagramForm.country} ${instagramForm.city}`}</span>
+                <span>{instagramRunResults.length ? `${filteredInstagramRunResults.length} / ${instagramRunResults.length} sonuc` : `${instagramForm.country} ${instagramForm.city}`}</span>
               </div>
               {instagramRunResults.length === 0 ? (
                 <div className="empty-state">Yeni bir Instagram aramasi calistirinca sadece o aramanin sonuclari burada gorunur. Eski leadler arsivde tutulur.</div>
               ) : (
-                <div className="searched-results-list instagram-current-results">
-                  {instagramRunResults.map((result) => (
-                    <button
-                      className={`searched-result-row searched-${result.status}`}
-                      disabled={!result.id}
-                      key={`${result.instagram || result.companyName}-${result.sourceQuery}-${result.status}`}
-                      onClick={() => selectRunResult(result)}
-                      type="button"
-                    >
-                      <span>
-                        <strong>{result.companyName}</strong>
-                        <small>{result.city || result.country} - {result.sourceQuery || result.sourceKeyword}</small>
-                      </span>
-                      <em>{runResultStatusLabels[result.status] || result.status}</em>
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <div className="run-result-filter-row instagram-result-filter-row">
+                    {Object.entries(runResultFilterLabels).map(([value, label]) => (
+                      <button
+                        className={instagramRunResultFilter === value ? 'active' : ''}
+                        key={value}
+                        onClick={() => setInstagramRunResultFilter(value)}
+                        type="button"
+                      >
+                        {label}
+                        <em>{countResultsByStatus(instagramRunResults, value)}</em>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="searched-results-list instagram-current-results">
+                    {filteredInstagramRunResults.length === 0 && (
+                      <div className="empty-state compact-empty">Bu filtrede sonuc yok.</div>
+                    )}
+                    {filteredInstagramRunResults.map((result) => (
+                      <button
+                        className={`searched-result-row searched-${result.status}`}
+                        disabled={!result.id}
+                        key={`${result.instagram || result.companyName}-${result.sourceQuery}-${result.status}`}
+                        onClick={() => selectRunResult(result)}
+                        type="button"
+                      >
+                        <span>
+                          <strong>{result.companyName}</strong>
+                          <small>{result.city || result.country} - {result.sourceQuery || result.sourceKeyword}</small>
+                          {result.reason && <small>{result.reason}</small>}
+                        </span>
+                        <em>
+                          {result.qualityScore ? `Kalite ${result.qualityScore}` : runResultStatusLabels[result.status] || result.status}
+                          {result.qualityLabel ? ` - ${result.qualityLabel}` : ''}
+                        </em>
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
 
               <details className="instagram-archive-panel">
@@ -1944,7 +2353,7 @@ export default function App() {
                       <div className="instagram-card-links">
                         <a className={!lead.instagram ? 'disabled-link' : ''} href={lead.instagram || undefined} rel="noreferrer" target="_blank"><InstagramIcon size={15} /> Profil</a>
                         <a className={!lead.whatsapp && !lead.phone ? 'disabled-link' : ''} href={(lead.whatsapp || lead.phone) ? `https://wa.me/${normalizePhoneForWhatsApp(lead.whatsapp || lead.phone)}` : undefined} rel="noreferrer" target="_blank"><MessageCircle size={15} /> WhatsApp</a>
-                        <button onClick={() => { setSelectedLead(lead); setActiveView('allLeads'); }} type="button">Detaya Al</button>
+                        <button onClick={() => { selectLead(lead); setActiveView('allLeads'); }} type="button">Detaya Al</button>
                       </div>
                       <div className="lead-feedback-actions">
                         <button

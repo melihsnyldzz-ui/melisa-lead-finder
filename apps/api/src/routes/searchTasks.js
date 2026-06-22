@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { notFound } from '../httpErrors.js';
@@ -175,6 +176,8 @@ function compactRunLead(lead, status, reason = null) {
     businessStatus: lead.businessStatus || null,
     sourceQuery: lead.sourceQuery || null,
     sourceKeyword: lead.sourceKeyword || null,
+    qualityScore: lead.rawPayload?.instagramQuality?.qualityScore || lead.qualityScore || null,
+    qualityLabel: lead.rawPayload?.instagramQuality?.qualityLabel || lead.qualityLabel || null,
     status,
     reason,
   };
@@ -211,6 +214,24 @@ function getGoogleSafetyConfig() {
 
 function getMonthStart(date = new Date()) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+function nullableJson(value) {
+  if (value === undefined || value === null) return null;
+  return JSON.stringify(value);
+}
+
+async function persistRunDetails(historyId, { targetFilteredCount, bestLeads, searchedResults, aiReport, usage }) {
+  await prisma.$executeRaw`
+    UPDATE "SearchRunHistory"
+    SET
+      "targetFilteredCount" = ${targetFilteredCount || 0},
+      "bestLeads" = ${nullableJson(bestLeads)}::jsonb,
+      "searchedResults" = ${nullableJson(searchedResults)}::jsonb,
+      "aiReport" = ${nullableJson(aiReport)}::jsonb,
+      "usage" = ${nullableJson(usage)}::jsonb
+    WHERE "id" = ${historyId}
+  `;
 }
 
 async function getGoogleMonthlyUsage() {
@@ -340,16 +361,40 @@ router.get('/history/check', async (req, res, next) => {
 router.get('/history', async (req, res, next) => {
   try {
     const query = listHistoryQuerySchema.parse(req.query);
-    const history = await prisma.searchRunHistory.findMany({
-      where: {
-        ...(query.country ? { country: { equals: query.country, mode: 'insensitive' } } : {}),
-        ...(query.city ? { city: { equals: query.city, mode: 'insensitive' } } : {}),
-        ...(query.sourceType ? { sourceType: query.sourceType } : {}),
-        ...(query.status ? { status: query.status } : {}),
-      },
-      orderBy: { ranAt: 'desc' },
-      take: query.take || 25,
-    });
+    const conditions = [];
+    if (query.country) conditions.push(Prisma.sql`LOWER("country") = LOWER(${query.country})`);
+    if (query.city) conditions.push(Prisma.sql`LOWER("city") = LOWER(${query.city})`);
+    if (query.sourceType) conditions.push(Prisma.sql`"sourceType" = ${query.sourceType}::"SourceType"`);
+    if (query.status) conditions.push(Prisma.sql`"status" = ${query.status}::"SearchTaskStatus"`);
+    const whereSql = conditions.length ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}` : Prisma.empty;
+    const history = await prisma.$queryRaw`
+      SELECT
+        "id",
+        "taskId",
+        "country",
+        "city",
+        "keywordGroup",
+        "sourceKeyword",
+        "query",
+        "sourceType",
+        "status",
+        "foundCount",
+        "createdCount",
+        "duplicateCount",
+        "targetFilteredCount",
+        "errorCount",
+        "averageScore",
+        "bestLeads",
+        "searchedResults",
+        "aiReport",
+        "usage",
+        "error",
+        "ranAt"
+      FROM "SearchRunHistory"
+      ${whereSql}
+      ORDER BY "ranAt" DESC
+      LIMIT ${query.take || 25}
+    `;
     res.json(history);
   } catch (err) {
     next(err);
@@ -586,24 +631,6 @@ router.post('/:id/run', async (req, res, next) => {
       },
     });
 
-    await prisma.searchRunHistory.create({
-      data: {
-        taskId: task.id,
-        country: task.country,
-        city: task.city,
-        keywordGroup: task.keywordGroup,
-        sourceKeyword: task.sourceKeyword,
-        query: task.query,
-        sourceType: task.sourceType,
-        status: 'COMPLETED',
-        foundCount,
-        createdCount,
-        duplicateCount,
-        errorCount,
-        averageScore,
-      },
-    });
-
     const bestLeads = acceptedLeads.sort((a, b) => b.leadScore - a.leadScore).slice(0, 5);
     let aiReport = null;
     try {
@@ -632,7 +659,37 @@ router.post('/:id/run', async (req, res, next) => {
       };
     }
 
+    const runBestLeads = bestLeads.map((lead) => compactRunLead(lead, 'found'));
     const runSearchedResults = dedupeRunResults(searchedResults).slice(0, 100);
+    const runUsage = {
+      textSearchCount,
+      detailRequestCount,
+    };
+
+    const runHistory = await prisma.searchRunHistory.create({
+      data: {
+        taskId: task.id,
+        country: task.country,
+        city: task.city,
+        keywordGroup: task.keywordGroup,
+        sourceKeyword: task.sourceKeyword,
+        query: task.query,
+        sourceType: task.sourceType,
+        status: 'COMPLETED',
+        foundCount,
+        createdCount,
+        duplicateCount,
+        errorCount,
+        averageScore,
+      },
+    });
+    await persistRunDetails(runHistory.id, {
+      targetFilteredCount,
+      bestLeads: runBestLeads,
+      searchedResults: runSearchedResults,
+      aiReport,
+      usage: runUsage,
+    });
 
     res.json({
       ...updated,
@@ -641,13 +698,10 @@ router.post('/:id/run', async (req, res, next) => {
       errorCount,
       targetFilteredCount,
       averageScore,
-      bestLeads,
+      bestLeads: runBestLeads,
       searchedResults: runSearchedResults,
       aiReport,
-      usage: {
-        textSearchCount,
-        detailRequestCount,
-      },
+      usage: runUsage,
     });
   } catch (err) {
     if (err.status !== 404) {

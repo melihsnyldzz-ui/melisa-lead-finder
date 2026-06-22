@@ -84,16 +84,136 @@ const listLeadsQuerySchema = z.object({
   country: z.string().trim().optional(),
   city: z.string().trim().optional(),
   sourceType: sourceTypeSchema.optional(),
+  sourceTypes: z.string().trim().optional(),
   status: leadStatusSchema.optional(),
   minScore: z.coerce.number().int().min(0).max(100).optional(),
   q: z.string().trim().optional(),
 });
 
-function buildLeadWhere({ country, city, sourceType, status, minScore, q }) {
+const leadDetailInclude = {
+  sources: { orderBy: { createdAt: 'desc' }, take: 20 },
+  instagramProfiles: { orderBy: { updatedAt: 'desc' }, take: 5 },
+  activities: { orderBy: { createdAt: 'desc' }, take: 20 },
+};
+
+function parseSourceTypes(sourceType, sourceTypes) {
+  const values = sourceTypes
+    ? sourceTypes.split(',').map((item) => item.trim()).filter(Boolean)
+    : sourceType
+      ? [sourceType]
+      : [];
+  const valid = values.filter((value) => sourceTypeSchema.safeParse(value).success);
+  return [...new Set(valid)];
+}
+
+function normalizePhone(value) {
+  if (!value) return null;
+  const digits = String(value).replace(/\D/g, '');
+  return digits.length >= 7 ? digits.slice(-12) : null;
+}
+
+function normalizeDomain(value) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    return new URL(withProtocol).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function normalizeInstagram(value) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw.includes('instagram.com') && !raw.startsWith('@')) return null;
+  try {
+    const parsed = new URL(raw);
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+    if (host !== 'instagram.com') return null;
+    const handle = parsed.pathname.split('/').filter(Boolean)[0];
+    return handle ? handle.replace(/^@/, '').toLowerCase() : null;
+  } catch {
+    const handle = raw.replace(/^@/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').split(/[/?#]/)[0];
+    return handle ? handle.toLowerCase() : null;
+  }
+}
+
+function nameTokens(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9ğüşöçıİ\s]/gi, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length >= 4 && !['baby', 'kids', 'shop', 'store', 'magaza', 'giyim', 'butik', 'cocuk', 'bebek'].includes(token));
+}
+
+function collectLeadSignals(lead) {
+  const instagramHandles = new Set([
+    normalizeInstagram(lead.instagram),
+    ...(lead.instagramProfiles || []).map((profile) => normalizeInstagram(profile.profileUrl || profile.username)),
+  ].filter(Boolean));
+  const domains = new Set([
+    normalizeDomain(lead.website),
+    ...(lead.instagramProfiles || []).map((profile) => normalizeDomain(profile.website)),
+  ].filter(Boolean));
+  const phones = new Set([
+    normalizePhone(lead.phone),
+    normalizePhone(lead.internationalPhoneNumber),
+    normalizePhone(lead.whatsapp),
+    ...(lead.instagramProfiles || []).flatMap((profile) => [normalizePhone(profile.phone), normalizePhone(profile.whatsapp)]),
+  ].filter(Boolean));
+
+  return {
+    instagramHandles,
+    domains,
+    phones,
+    tokens: new Set(nameTokens(`${lead.companyName || ''} ${lead.displayName || ''}`)),
+  };
+}
+
+function scorePossibleMatch(selected, candidate) {
+  const selectedSignals = collectLeadSignals(selected);
+  const candidateSignals = collectLeadSignals(candidate);
+  const reasons = [];
+  let score = 0;
+
+  if ([...selectedSignals.instagramHandles].some((value) => candidateSignals.instagramHandles.has(value))) {
+    score += 45;
+    reasons.push('Ayni Instagram profili');
+  }
+  if ([...selectedSignals.domains].some((value) => candidateSignals.domains.has(value))) {
+    score += 35;
+    reasons.push('Ayni website domaini');
+  }
+  if ([...selectedSignals.phones].some((value) => candidateSignals.phones.has(value))) {
+    score += 35;
+    reasons.push('Ayni telefon/WhatsApp');
+  }
+
+  const overlapTokens = [...selectedSignals.tokens].filter((token) => candidateSignals.tokens.has(token));
+  const sameCity = selected.city && candidate.city && selected.city.toLowerCase() === candidate.city.toLowerCase();
+  const sameCountry = selected.country && candidate.country && selected.country.toLowerCase() === candidate.country.toLowerCase();
+
+  if (overlapTokens.length && sameCity) {
+    score += 20;
+    reasons.push(`Ayni sehir ve benzer isim: ${overlapTokens.slice(0, 2).join(', ')}`);
+  } else if (overlapTokens.length && sameCountry) {
+    score += 10;
+    reasons.push(`Ayni ulke ve benzer isim: ${overlapTokens.slice(0, 2).join(', ')}`);
+  }
+
+  return { score: Math.min(score, 100), reasons };
+}
+
+function buildLeadWhere({ country, city, sourceType, sourceTypes, status, minScore, q }) {
+  const parsedSourceTypes = parseSourceTypes(sourceType, sourceTypes);
   return {
     ...(country ? { country: { contains: String(country), mode: 'insensitive' } } : {}),
     ...(city ? { city: { contains: String(city), mode: 'insensitive' } } : {}),
-    ...(sourceType ? { sourceType } : {}),
+    ...(parsedSourceTypes.length === 1 ? { sourceType: parsedSourceTypes[0] } : {}),
+    ...(parsedSourceTypes.length > 1 ? { sourceType: { in: parsedSourceTypes } } : {}),
     ...(status ? { status } : { status: { not: 'REJECTED' } }),
     ...(minScore !== undefined ? { leadScore: { gte: minScore } } : {}),
     ...(q ? { companyName: { contains: String(q), mode: 'insensitive' } } : {}),
@@ -172,9 +292,61 @@ router.get('/export.csv', async (req, res, next) => {
 
 router.get('/:id', async (req, res, next) => {
   try {
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    const lead = await prisma.lead.findUnique({
+      where: { id: req.params.id },
+      include: leadDetailInclude,
+    });
     if (!lead) throw notFound('Lead not found');
     res.json(lead);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:id/possible-matches', async (req, res, next) => {
+  try {
+    const selected = await prisma.lead.findUnique({
+      where: { id: req.params.id },
+      include: leadDetailInclude,
+    });
+    if (!selected) throw notFound('Lead not found');
+
+    const candidates = await prisma.lead.findMany({
+      where: {
+        id: { not: selected.id },
+        status: { not: 'REJECTED' },
+        ...(selected.country ? { country: { equals: selected.country, mode: 'insensitive' } } : {}),
+      },
+      include: {
+        instagramProfiles: { take: 3 },
+      },
+      orderBy: [{ leadScore: 'desc' }, { createdAt: 'desc' }],
+      take: 1000,
+    });
+
+    const matches = candidates
+      .map((candidate) => {
+        const match = scorePossibleMatch(selected, candidate);
+        return {
+          id: candidate.id,
+          companyName: candidate.companyName,
+          displayName: candidate.displayName,
+          country: candidate.country,
+          city: candidate.city,
+          sourceType: candidate.sourceType,
+          leadScore: candidate.leadScore,
+          phone: candidate.internationalPhoneNumber || candidate.phone || candidate.whatsapp,
+          website: candidate.website,
+          instagram: candidate.instagram || candidate.instagramProfiles?.[0]?.profileUrl || null,
+          matchScore: match.score,
+          matchReasons: match.reasons,
+        };
+      })
+      .filter((candidate) => candidate.matchScore >= 20)
+      .sort((a, b) => b.matchScore - a.matchScore || b.leadScore - a.leadScore)
+      .slice(0, 10);
+
+    res.json(matches);
   } catch (err) {
     next(err);
   }
@@ -196,7 +368,26 @@ router.patch('/:id', async (req, res, next) => {
     const input = updateLeadSchema.parse(req.body);
     const existing = await prisma.lead.findUnique({ where: { id: req.params.id } });
     if (!existing) throw notFound('Lead not found');
-    const lead = await prisma.lead.update({ where: { id: req.params.id }, data: input });
+    const lead = await prisma.lead.update({ where: { id: req.params.id }, data: input, include: leadDetailInclude });
+
+    if (input.userFeedback && input.userFeedback !== existing.userFeedback) {
+      await prisma.leadActivity.create({
+        data: {
+          leadId: lead.id,
+          activityType: 'FEEDBACK',
+          channel: 'APP',
+          content: `Feedback changed from ${existing.userFeedback} to ${input.userFeedback}`,
+          result: input.userFeedback,
+          createdBy: 'user',
+        },
+      });
+      const leadWithActivity = await prisma.lead.findUnique({
+        where: { id: lead.id },
+        include: leadDetailInclude,
+      });
+      return res.json(leadWithActivity);
+    }
+
     res.json(lead);
   } catch (err) {
     next(err);
@@ -216,6 +407,7 @@ router.post('/:id/ai-analysis', async (req, res, next) => {
         aiAnalysis: analysis,
         aiAnalyzedAt: new Date(),
       },
+      include: leadDetailInclude,
     });
 
     res.json(lead);

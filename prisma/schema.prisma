@@ -248,8 +248,13 @@ model SearchRunHistory {
   foundCount   Int              @default(0)
   createdCount Int              @default(0)
   duplicateCount Int            @default(0)
+  targetFilteredCount Int        @default(0)
   errorCount Int                @default(0)
   averageScore Float?
+  bestLeads    Json?
+  searchedResults Json?
+  aiReport     Json?
+  usage        Json?
   error        String?
   ranAt        DateTime         @default(now())
 

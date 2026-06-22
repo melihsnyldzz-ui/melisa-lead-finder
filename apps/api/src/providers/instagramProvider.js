@@ -1,4 +1,4 @@
-import { isBabyKidsClothingLead } from '../services/leadScoring.js';
+import { analyzeInstagramLeadQuality } from '../services/leadScoring.js';
 
 const instagramProfiles = [
   { handle: 'mini.style', label: 'Mini Style', signal: 'kids clothing boutique', followers: 18400 },
@@ -157,6 +157,58 @@ function buildLeadFromApifyItem(task, item, index) {
   };
 }
 
+function compactInstagramResult(lead, status, reason = null) {
+  return {
+    companyName: lead.companyName,
+    country: lead.country,
+    city: lead.city,
+    phone: lead.internationalPhoneNumber || lead.phone || lead.whatsapp || null,
+    website: lead.website || null,
+    instagram: lead.instagram || null,
+    leadScore: lead.leadScore || null,
+    sourceQuery: lead.sourceQuery || null,
+    sourceKeyword: lead.sourceKeyword || null,
+    status,
+    reason,
+    qualityScore: lead.rawPayload?.instagramQuality?.qualityScore || null,
+    qualityLabel: lead.rawPayload?.instagramQuality?.qualityLabel || null,
+  };
+}
+
+function classifyInstagramLeads(leads, maxResults) {
+  const classified = leads.map((lead) => {
+    const instagramQuality = analyzeInstagramLeadQuality(lead);
+    return {
+      ...lead,
+      rawPayload: {
+        ...(lead.rawPayload || {}),
+        instagramQuality,
+      },
+    };
+  });
+  const accepted = classified
+    .filter((lead) => lead.rawPayload.instagramQuality.accepted)
+    .sort((a, b) => b.rawPayload.instagramQuality.qualityScore - a.rawPayload.instagramQuality.qualityScore)
+    .slice(0, Number(maxResults) || 20);
+  const acceptedKeys = new Set(accepted.map((lead) => lead.instagram || `${lead.companyName}|${lead.city}`));
+  const searchedResults = classified.map((lead) => {
+    const key = lead.instagram || `${lead.companyName}|${lead.city}`;
+    const quality = lead.rawPayload.instagramQuality;
+    return compactInstagramResult(
+      lead,
+      acceptedKeys.has(key) ? 'candidate' : 'filtered_out',
+      quality.reason,
+    );
+  });
+
+  return {
+    leads: accepted,
+    foundCount: classified.length,
+    filteredOutCount: Math.max(0, classified.length - accepted.length),
+    searchedResults,
+  };
+}
+
 async function runApifyInstagramSearch(task) {
   const { token, actorId } = getApifyConfig();
   if (!token || !actorId) return null;
@@ -197,11 +249,10 @@ async function runApifyInstagramSearch(task) {
   }
 
   const items = await response.json();
-  return (Array.isArray(items) ? items : [])
+  const leads = (Array.isArray(items) ? items : [])
     .map((item, index) => buildLeadFromApifyItem(task, item, index))
-    .filter(Boolean)
-    .filter((lead) => isBabyKidsClothingLead(lead))
-    .slice(0, Number(task.maxResults) || 20);
+    .filter(Boolean);
+  return classifyInstagramLeads(leads, task.maxResults);
 }
 
 function buildInstagramLead({ country, city, query, sourceKeyword }, profile, index) {
@@ -242,21 +293,39 @@ function buildInstagramLead({ country, city, query, sourceKeyword }, profile, in
   };
 }
 
+function buildLocalInstagramResult(task, warning = null) {
+  const count = Math.min(Number(task.maxResults) || 20, 50);
+  const leads = Array.from({ length: count }).map((_, index) => {
+    const profile = instagramProfiles[index % instagramProfiles.length];
+    const lead = buildInstagramLead(task, profile, index);
+    return warning
+      ? {
+          ...lead,
+          notes: `${lead.notes} Canli Apify aramasi kullanilamadi: ${warning}`,
+          rawPayload: {
+            ...(lead.rawPayload || {}),
+            liveProviderWarning: warning,
+          },
+        }
+      : lead;
+  });
+  return classifyInstagramLeads(leads, task.maxResults);
+}
+
 export async function runInstagramSearch({ country, city, query, sourceKeyword, maxResults = 20 }) {
   const task = { country, city, query, sourceKeyword, maxResults };
   const { token, actorId } = getApifyConfig();
   try {
-    const liveLeads = await runApifyInstagramSearch(task);
-    if (liveLeads?.length) return liveLeads;
+    const liveResult = await runApifyInstagramSearch(task);
+    if (liveResult?.foundCount) return liveResult;
   } catch (err) {
-    if (token && actorId) throw err;
+    if (token && actorId && process.env.APIFY_INSTAGRAM_STRICT === 'true') throw err;
+    return buildLocalInstagramResult(task, err.message || 'fetch failed');
   }
 
-  if (token && actorId) return [];
+  if (token && actorId) {
+    return buildLocalInstagramResult(task, 'Apify sonuc dondurmedi');
+  }
 
-  const count = Math.min(Number(maxResults) || 20, 50);
-  return Array.from({ length: count }).map((_, index) => {
-    const profile = instagramProfiles[index % instagramProfiles.length];
-    return buildInstagramLead({ country, city, query, sourceKeyword }, profile, index);
-  });
+  return buildLocalInstagramResult(task);
 }
